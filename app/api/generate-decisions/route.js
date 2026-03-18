@@ -30,8 +30,13 @@ export async function POST(request) {
         ? (((curr - prev) / Math.abs(prev)) * 100).toFixed(1)
         : null
 
-      // Find benchmark from metadata
-      var meta = (metadata || []).find(function(m) { return m.field_name === r.id || r.title.toLowerCase().includes(m.display_name.toLowerCase()) })
+      // Find benchmark from metadata — match on field_name extracted from synthetic id
+      var fieldName = r.id.replace('trend_kpi_', '')
+      var meta = (metadata || []).find(function(m) {
+        return m.field_name === fieldName ||
+               m.field_name === r.id ||
+               r.title.toLowerCase().includes((m.display_name || '').toLowerCase())
+      })
       var benchmark = meta && meta.benchmark ? meta.benchmark : null
 
       return {
@@ -42,11 +47,51 @@ export async function POST(request) {
         change_pct:   changePct ? parseFloat(changePct) : null,
         benchmark:    benchmark,
         breached:     benchmark && !isNaN(curr) ? (parseFloat(benchmark) < curr ? 'above' : parseFloat(benchmark) > curr ? 'below' : 'at') : null,
+        source:       r._from_trend ? 'trend_explorer' : 'dashboard',
       }
     })
 
+  // For trend series: compute direction + acceleration instead of dumping raw rows
+  var trendSummary = queryResults
+    .filter(function(r) { return (r.chart_type === 'area' || r.chart_type === 'line') && !r.error && r.data && r.data.length >= 3 })
+    .map(function(r) {
+      var vals = r.data
+        .slice()
+        .sort(function(a, b) { return String(a.period || a.label || '').localeCompare(String(b.period || b.label || '')) })
+        .map(function(row) { return parseFloat(row.value || row.current_value || 0) })
+        .filter(function(v) { return !isNaN(v) })
+
+      if (vals.length < 3) return null
+
+      var latest   = vals[vals.length - 1]
+      var prev3avg = (vals[vals.length - 4] + vals[vals.length - 3] + vals[vals.length - 2]) / 3
+      var first    = vals[0]
+      var overallChg = first !== 0 ? ((latest - first) / Math.abs(first) * 100).toFixed(1) : null
+      var recentChg  = prev3avg !== 0 ? ((latest - prev3avg) / Math.abs(prev3avg) * 100).toFixed(1) : null
+
+      // Detect acceleration: is recent trend steeper than overall trend?
+      var midpoint   = vals[Math.floor(vals.length / 2)]
+      var firstHalf  = midpoint !== 0 ? ((midpoint - first) / Math.abs(first) * 100) : 0
+      var secondHalf = midpoint !== 0 ? ((latest - midpoint) / Math.abs(midpoint) * 100) : 0
+      var accelerating = Math.abs(secondHalf) > Math.abs(firstHalf) * 1.2
+
+      return {
+        title:          r.title,
+        unit:           r.unit || '',
+        periods:        r.data.length,
+        latest_value:   latest,
+        overall_change_pct: overallChg ? parseFloat(overallChg) : null,
+        recent_3m_change_pct: recentChg ? parseFloat(recentChg) : null,
+        direction:      latest > first ? 'up' : latest < first ? 'down' : 'flat',
+        accelerating:   accelerating,
+        peak:           Math.max.apply(null, vals),
+        trough:         Math.min.apply(null, vals),
+      }
+    })
+    .filter(Boolean)
+
   var chartSummary = queryResults
-    .filter(function(r) { return r.chart_type !== 'kpi' && !r.error && r.data && r.data.length })
+    .filter(function(r) { return r.chart_type !== 'kpi' && r.chart_type !== 'area' && r.chart_type !== 'line' && !r.error && r.data && r.data.length })
     .map(function(r) {
       var top = r.data.slice(0, 5)
       return { title: r.title, chart_type: r.chart_type, top_rows: top }
@@ -76,8 +121,13 @@ export async function POST(request) {
     '## CONTEXT',
     'Period: ' + (periodInfo.viewLabel || 'current') + ' vs ' + (periodInfo.cmpLabel || 'prior'),
     '',
-    '## KPI SNAPSHOT',
+    '## KPI SNAPSHOT (point-in-time values)',
     JSON.stringify(kpiSummary, null, 2),
+    '',
+    '## TREND ANALYSIS (multi-period trajectory from Trend Explorer)',
+    trendSummary.length
+      ? JSON.stringify(trendSummary, null, 2)
+      : '(no trend data available — user has not opened Trend Explorer yet)',
     '',
     '## CHART DATA (dimension breakdowns)',
     JSON.stringify(chartSummary, null, 2),
@@ -89,10 +139,12 @@ export async function POST(request) {
     '',
     'STEP 1 — ANOMALY SCAN',
     'For every KPI: compare current vs previous and vs benchmark.',
+    'ALSO check trend data: if a KPI is accelerating downward or upward, flag it even if the point-in-time value looks acceptable.',
     'Flag anything that is:',
     '  - More than 10% worse than prior period',
     '  - Breaching its benchmark',
-    '  - Showing an accelerating negative trend (use chart data for context)',
+    '  - Showing an accelerating negative trend (use trend_analysis above — check accelerating: true + direction: down)',
+    '  - Showing a long-run deterioration (overall_change_pct strongly negative over many periods)',
     '',
     'STEP 2 — DECISION RECOMMENDATIONS',
     'For each significant signal, produce ONE clear decision card.',
