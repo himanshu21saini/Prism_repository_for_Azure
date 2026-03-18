@@ -355,11 +355,10 @@ export default function Dashboard({ session }) {
       )}
 
       {/* ── Trend Explorer (full width, single interactive chart) ─── */}
-      {trendResults.length > 0 && (
+      {(metadata || []).some(function(m) { return m.type === 'kpi' || m.type === 'derived_kpi' }) && (
         <TrendExplorer
-          trendResults={trendResults}
-          allQueries={allQueries}
-          periodInfo={periodInfo}
+          metadata={metadata}
+          datasetId={session.datasetId}
           onSimulate={function(q) { setWhatifQuery(q) }}
         />
       )}
