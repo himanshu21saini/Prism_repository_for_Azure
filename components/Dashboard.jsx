@@ -9,6 +9,7 @@ import {
 import KPICard from './KPICard'
 import SummaryPanel from './SummaryPanel'
 import DecisionPanel from './DecisionPanel'
+import WhatIfDrawer from './WhatIfDrawer'
 
 // ESSEX-inspired teal/blue palette
 var P  = ['#00C8F0','#2B7FE3','#00B4A0','#7B8FF0','#F0A030','#9B7FE3','#10C48A','#E05555']
@@ -37,7 +38,7 @@ var ttStyle = {
 
 var axStyle = { fontSize: 10, fill: '#3D6080', fontFamily: "'JetBrains Mono', monospace" }
 
-function ChartCard({ title, insight, children, index, badge, fullWidth }) {
+function ChartCard({ title, insight, children, index, badge, fullWidth, onSimulate }) {
   return (
     <div
       className={'fade-up d' + Math.min(index + 2, 6)}
@@ -82,6 +83,22 @@ function ChartCard({ title, insight, children, index, badge, fullWidth }) {
             {badge}
           </span>
         )}
+        {onSimulate && (
+          <button
+            onClick={onSimulate}
+            style={{
+              fontSize: 9, padding: '2px 8px', borderRadius: 3, fontWeight: 500,
+              background: 'rgba(155,127,227,0.1)', color: '#9B7FE3',
+              border: '1px solid rgba(155,127,227,0.3)',
+              whiteSpace: 'nowrap', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)',
+              cursor: 'pointer', transition: 'all var(--transition)', flexShrink: 0,
+            }}
+            onMouseEnter={function(e) { e.currentTarget.style.background = 'rgba(155,127,227,0.2)' }}
+            onMouseLeave={function(e) { e.currentTarget.style.background = 'rgba(155,127,227,0.1)' }}
+          >
+            ⟳ Simulate
+          </button>
+        )}
       </div>
       {children}
     </div>
@@ -96,6 +113,8 @@ export default function Dashboard({ session }) {
   var [decisionState, setDecisionState] = useState('idle')
   var [decisionResult, setDecisionResult] = useState(null)
   var [decisionError,  setDecisionError]  = useState('')
+
+  var [whatifQuery, setWhatifQuery] = useState(null)
 
   var queryResults = session.queryResults || []
   var metadata     = session.metadata     || []
@@ -149,9 +168,21 @@ export default function Dashboard({ session }) {
     var insight  = getInsight(result.id)
     var ct       = result.chart_type
 
+    // Find the full query object (has .sql) for the what-if simulator
+    var fullQuery = allQueries.find(function(q) { return q.id === result.id }) || result
+    var simulateQuery = Object.assign({}, fullQuery, {
+      label_key:      result.label_key,
+      value_key:      result.value_key,
+      current_key:    result.current_key,
+      comparison_key: result.comparison_key,
+      unit:           result.unit,
+      chart_type:     result.chart_type,
+    })
+    function onSimulate() { setWhatifQuery(simulateQuery) }
+
     if (ct === 'bar') {
       return (
-        <ChartCard key={result.id} title={result.title} insight={insight} index={idx} badge={badge} fullWidth={isFirst}>
+        <ChartCard key={result.id} title={result.title} insight={insight} index={idx} badge={badge} fullWidth={isFirst} onSimulate={onSimulate}>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 28 }} barGap={2}>
               <CartesianGrid strokeDasharray="1 4" stroke="rgba(56,140,255,0.08)" vertical={false} />
@@ -170,7 +201,7 @@ export default function Dashboard({ session }) {
     if (ct === 'stacked_bar') {
       var seriesKeys = result.series_keys || Object.keys(data[0] || {}).filter(function(k) { return k !== labelKey })
       return (
-        <ChartCard key={result.id} title={result.title} insight={insight} index={idx} fullWidth={isFirst}>
+        <ChartCard key={result.id} title={result.title} insight={insight} index={idx} fullWidth={isFirst} onSimulate={onSimulate}>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 28 }}>
               <CartesianGrid strokeDasharray="1 4" stroke="rgba(56,140,255,0.08)" vertical={false} />
@@ -187,7 +218,7 @@ export default function Dashboard({ session }) {
 
     if (ct === 'line') {
       return (
-        <ChartCard key={result.id} title={result.title} insight={insight} index={idx} fullWidth={isFirst}>
+        <ChartCard key={result.id} title={result.title} insight={insight} index={idx} fullWidth={isFirst} onSimulate={onSimulate}>
           <ResponsiveContainer width="100%" height={220}>
             <LineChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 28 }}>
               <CartesianGrid strokeDasharray="1 4" stroke="rgba(56,140,255,0.08)" vertical={false} />
@@ -203,7 +234,7 @@ export default function Dashboard({ session }) {
 
     if (ct === 'area') {
       return (
-        <ChartCard key={result.id} title={result.title} insight={insight} index={idx} fullWidth={isFirst}>
+        <ChartCard key={result.id} title={result.title} insight={insight} index={idx} fullWidth={isFirst} onSimulate={onSimulate}>
           <ResponsiveContainer width="100%" height={220}>
             <AreaChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 28 }}>
               <defs>
@@ -226,7 +257,7 @@ export default function Dashboard({ session }) {
     if (ct === 'pie' || ct === 'donut') {
       var innerR = ct === 'donut' ? 48 : 0
       return (
-        <ChartCard key={result.id} title={result.title} insight={insight} index={idx}>
+        <ChartCard key={result.id} title={result.title} insight={insight} index={idx} onSimulate={onSimulate}>
           <ResponsiveContainer width="100%" height={220}>
             <PieChart>
               <Pie data={data} cx="50%" cy="44%" innerRadius={innerR} outerRadius={82} dataKey={valueKey} nameKey={labelKey} paddingAngle={ct === 'donut' ? 2 : 1} strokeWidth={0}>
@@ -243,7 +274,7 @@ export default function Dashboard({ session }) {
     if (ct === 'scatter') {
       var xKey = result.x_key || 'x_value'; var yKey = result.y_key || 'y_value'
       return (
-        <ChartCard key={result.id} title={result.title} insight={insight} index={idx}>
+        <ChartCard key={result.id} title={result.title} insight={insight} index={idx} onSimulate={onSimulate}>
           <ResponsiveContainer width="100%" height={220}>
             <ScatterChart margin={{ top: 4, right: 16, left: 0, bottom: 20 }}>
               <CartesianGrid strokeDasharray="1 4" stroke="rgba(56,140,255,0.08)" />
@@ -380,6 +411,14 @@ export default function Dashboard({ session }) {
 
       {/* ── Summary ──────────────────────────────────────────────── */}
       {summaryState !== 'idle' && <SummaryPanel narrative={narrative} state={summaryState} error={summaryError} />}
+
+      {/* ── What-if Drawer ───────────────────────────────────────── */}
+      <WhatIfDrawer
+        query={whatifQuery || {}}
+        metadata={metadata}
+        isOpen={!!whatifQuery}
+        onClose={function() { setWhatifQuery(null) }}
+      />
     </div>
   )
 }
