@@ -439,6 +439,7 @@ export default function Dashboard({ session }) {
         <TrendExplorer
           metadata={metadata}
           datasetId={session.datasetId}
+          timePeriod={session.timePeriod}
           onSimulate={function(q) { setWhatifQuery(q) }}
           onTrendData={handleTrendData}
         />
