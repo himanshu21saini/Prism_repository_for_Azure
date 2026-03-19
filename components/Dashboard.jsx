@@ -407,6 +407,18 @@ export default function Dashboard({ session }) {
                 {trendResults.length} trends
                 <span style={{ color: 'var(--text-tertiary)', margin: '0 8px' }}>·</span>
                 {chartResults.length} charts
+                {session.userContext && session.userContext.filters && session.userContext.filters.map(function(f, i) {
+                  return (
+                    <span key={i} style={{ marginLeft: 8, fontSize: 10, padding: '2px 8px', borderRadius: 10, background: 'var(--accent-dim)', border: '1px solid var(--accent-border)', color: 'var(--text-accent)', fontFamily: 'var(--font-mono)' }}>
+                      {f.display || (f.field + ' ' + f.operator + ' ' + f.value)}
+                    </span>
+                  )
+                })}
+                {session.userContext && session.userContext.kpi_focus && session.userContext.kpi_focus.length > 0 && (
+                  <span style={{ marginLeft: 8, fontSize: 10, padding: '2px 8px', borderRadius: 10, background: 'rgba(16,196,138,0.1)', border: '1px solid rgba(16,196,138,0.3)', color: '#10C48A', fontFamily: 'var(--font-mono)' }}>
+                    Focus: {session.userContext.kpi_focus.slice(0,2).join(', ')}{session.userContext.kpi_focus.length > 2 ? ' +' + (session.userContext.kpi_focus.length - 2) : ''}
+                  </span>
+                )}
               </p>
             </div>
 
