@@ -297,9 +297,32 @@ export async function POST(request) {
   var metadataSetId = body.metadataSetId
   var datasetId     = body.datasetId
   var timePeriod    = body.timePeriod || { viewType: 'YTD', year: 2024, month: 12, comparisonType: 'YoY' }
+  var userContext   = body.userContext || null  // { filters: [...], kpi_focus: [...], explanation: '' }
 
   if (!metadataSetId || !datasetId) {
     return Response.json({ error: 'metadataSetId and datasetId are required.' }, { status: 400 })
+  }
+
+  // Build SQL fragment for user context filters
+  // e.g. "AND data->>'Region' = 'West'"
+  var contextFilterSQL = ''
+  if (userContext && userContext.filters && userContext.filters.length) {
+    contextFilterSQL = userContext.filters.map(function(f) {
+      var op = f.operator || '='
+      var val = String(f.value || '').replace(/'/g, "''")  // escape single quotes
+      return "AND data->>'" + f.field + "' " + op + " '" + val + "'"
+    }).join(' ')
+  }
+
+  // Boost priority of KPI focus fields by sorting them to front of kpis array
+  function applyFocusPriority(kpiArray) {
+    if (!userContext || !userContext.kpi_focus || !userContext.kpi_focus.length) return kpiArray
+    var focus = userContext.kpi_focus
+    return kpiArray.slice().sort(function(a, b) {
+      var aFocus = focus.indexOf(a.field_name) >= 0 ? 1 : 0
+      var bFocus = focus.indexOf(b.field_name) >= 0 ? 1 : 0
+      return bFocus - aFocus  // focus fields first
+    })
   }
 
   var metaRows = await query('SELECT * FROM metadata_rows WHERE metadata_set_id = $1 ORDER BY id', [metadataSetId])
@@ -323,12 +346,19 @@ export async function POST(request) {
   var derived = metaRows.filter(function(m) { return m.type === 'derived_kpi' && m.is_output !== 'N' })
   var dims    = metaRows.filter(function(m) { return m.type === 'dimension'   && m.is_output !== 'N' })
 
+  // Apply KPI focus priority — focus KPIs bubble to front
+  kpis    = applyFocusPriority(kpis)
+  derived = applyFocusPriority(derived)
+
   var topKpis    = kpis.slice(0, 6)
   var topDerived = derived.slice(0, 4)
 
   // ── RUN PRE-ANALYSIS before calling LLM ──────────────────────────────────
+  // Context filter is applied here too so CV scores reflect the filtered population
+  var contextCurCond = f.curCond + (contextFilterSQL ? ' ' + contextFilterSQL : '')
+  var contextCmpCond = f.cmpCond + (contextFilterSQL ? ' ' + contextFilterSQL : '')
   console.log('=== pre-analysis: running', topKpis.length, 'KPIs ×', dims.length, 'dims')
-  var preAnalysis = await runPreAnalysis(datasetId, topKpis, dims, f.curCond, f.cmpCond)
+  var preAnalysis = await runPreAnalysis(datasetId, topKpis, dims, contextCurCond, contextCmpCond)
   var preAnalysisText = formatPreAnalysis(preAnalysis)
   console.log('=== pre-analysis: done,', preAnalysis.length, 'combinations scored')
 
@@ -350,20 +380,22 @@ export async function POST(request) {
     })
   }
 
-  // SQL templates — use resolved year/month field names (f.yf, f.mf)
-  var tplSum = "SELECT SUM(CASE WHEN " + f.curCond + " THEN COALESCE((data->>'__FIELD__')::numeric,0) ELSE 0 END) AS current_value, SUM(CASE WHEN " + f.cmpCond + " THEN COALESCE((data->>'__FIELD__')::numeric,0) ELSE 0 END) AS comparison_value FROM dataset_rows WHERE dataset_id = " + datasetId
+  var CF = contextFilterSQL ? ' ' + contextFilterSQL : ''  // context filter fragment
 
-  var tplAvg = "SELECT AVG(CASE WHEN " + f.curCond + " THEN COALESCE((data->>'__FIELD__')::numeric,0) ELSE NULL END) AS current_value, AVG(CASE WHEN " + f.cmpCond + " THEN COALESCE((data->>'__FIELD__')::numeric,0) ELSE NULL END) AS comparison_value FROM dataset_rows WHERE dataset_id = " + datasetId
+  // SQL templates — use resolved year/month field names (f.yf, f.mf) + context filter
+  var tplSum = "SELECT SUM(CASE WHEN " + f.curCond + " THEN COALESCE((data->>'__FIELD__')::numeric,0) ELSE 0 END) AS current_value, SUM(CASE WHEN " + f.cmpCond + " THEN COALESCE((data->>'__FIELD__')::numeric,0) ELSE 0 END) AS comparison_value FROM dataset_rows WHERE dataset_id = " + datasetId + CF
 
-  var tplBar = "SELECT data->>'__DIM__' AS label, SUM(CASE WHEN " + f.curCond + " THEN COALESCE((data->>'__KPI__')::numeric,0) ELSE 0 END) AS current_value, SUM(CASE WHEN " + f.cmpCond + " THEN COALESCE((data->>'__KPI__')::numeric,0) ELSE 0 END) AS comparison_value FROM dataset_rows WHERE dataset_id = " + datasetId + " GROUP BY label ORDER BY current_value DESC LIMIT 10"
+  var tplAvg = "SELECT AVG(CASE WHEN " + f.curCond + " THEN COALESCE((data->>'__FIELD__')::numeric,0) ELSE NULL END) AS current_value, AVG(CASE WHEN " + f.cmpCond + " THEN COALESCE((data->>'__FIELD__')::numeric,0) ELSE NULL END) AS comparison_value FROM dataset_rows WHERE dataset_id = " + datasetId + CF
 
-  var tplLine = "SELECT CONCAT(data->>'" + f.yf + "','-',LPAD(CAST((data->>'" + f.mf + "')::integer AS TEXT),2,'0')) AS period, __AGG__(COALESCE((data->>'__KPI__')::numeric,0)) AS value FROM dataset_rows WHERE dataset_id = " + datasetId + " AND (data->>'" + f.yf + "')::integer = " + f.curYear + " GROUP BY data->>'" + f.yf + "', data->>'" + f.mf + "' ORDER BY period ASC"
+  var tplBar = "SELECT data->>'__DIM__' AS label, SUM(CASE WHEN " + f.curCond + " THEN COALESCE((data->>'__KPI__')::numeric,0) ELSE 0 END) AS current_value, SUM(CASE WHEN " + f.cmpCond + " THEN COALESCE((data->>'__KPI__')::numeric,0) ELSE 0 END) AS comparison_value FROM dataset_rows WHERE dataset_id = " + datasetId + CF + " GROUP BY label ORDER BY current_value DESC LIMIT 10"
 
-  var tplPie = "SELECT data->>'__DIM__' AS label, __AGG__(CASE WHEN " + f.curCond + " THEN COALESCE((data->>'__KPI__')::numeric,0) ELSE 0 END) AS value FROM dataset_rows WHERE dataset_id = " + datasetId + " GROUP BY label ORDER BY value DESC LIMIT 6"
+  var tplLine = "SELECT CONCAT(data->>'" + f.yf + "','-',LPAD(CAST((data->>'" + f.mf + "')::integer AS TEXT),2,'0')) AS period, __AGG__(COALESCE((data->>'__KPI__')::numeric,0)) AS value FROM dataset_rows WHERE dataset_id = " + datasetId + CF + " AND (data->>'" + f.yf + "')::integer = " + f.curYear + " GROUP BY data->>'" + f.yf + "', data->>'" + f.mf + "' ORDER BY period ASC"
 
-  var tplScatter = "SELECT data->>'__DIM__' AS label, AVG(CASE WHEN " + f.curCond + " THEN COALESCE((data->>'__KPI1__')::numeric,0) ELSE NULL END) AS x_value, AVG(CASE WHEN " + f.curCond + " THEN COALESCE((data->>'__KPI2__')::numeric,0) ELSE NULL END) AS y_value FROM dataset_rows WHERE dataset_id = " + datasetId + " AND " + f.curCond + " GROUP BY label"
+  var tplPie = "SELECT data->>'__DIM__' AS label, __AGG__(CASE WHEN " + f.curCond + " THEN COALESCE((data->>'__KPI__')::numeric,0) ELSE 0 END) AS value FROM dataset_rows WHERE dataset_id = " + datasetId + CF + " GROUP BY label ORDER BY value DESC LIMIT 6"
 
-  var tplArea = "SELECT CONCAT(data->>'" + f.yf + "','-',LPAD(CAST((data->>'" + f.mf + "')::integer AS TEXT),2,'0')) AS period, SUM(COALESCE((data->>'__KPI__')::numeric,0)) AS value FROM dataset_rows WHERE dataset_id = " + datasetId + " AND (data->>'" + f.yf + "')::integer = " + f.curYear + " GROUP BY data->>'" + f.yf + "', data->>'" + f.mf + "' ORDER BY period ASC"
+  var tplScatter = "SELECT data->>'__DIM__' AS label, AVG(CASE WHEN " + f.curCond + " THEN COALESCE((data->>'__KPI1__')::numeric,0) ELSE NULL END) AS x_value, AVG(CASE WHEN " + f.curCond + " THEN COALESCE((data->>'__KPI2__')::numeric,0) ELSE NULL END) AS y_value FROM dataset_rows WHERE dataset_id = " + datasetId + CF + " AND " + f.curCond + " GROUP BY label"
+
+  var tplArea = "SELECT CONCAT(data->>'" + f.yf + "','-',LPAD(CAST((data->>'" + f.mf + "')::integer AS TEXT),2,'0')) AS period, SUM(COALESCE((data->>'__KPI__')::numeric,0)) AS value FROM dataset_rows WHERE dataset_id = " + datasetId + CF + " AND (data->>'" + f.yf + "')::integer = " + f.curYear + " GROUP BY data->>'" + f.yf + "', data->>'" + f.mf + "' ORDER BY period ASC"
 
   var systemMsg = 'You are a senior banking BI analyst and SQL engineer. Return only valid JSON. CRITICAL SQL RULE: current_value uses ' + f.yf + '=' + f.curYear + ' and comparison_value uses ' + f.yf + '=' + f.cmpYear + '. These are DIFFERENT years. Use CASE WHEN to split them. Never use IN. Never repeat the same condition in both columns. The year field is "' + f.yf + '" and the month field is "' + f.mf + '" — always use these exact field names in SQL conditions.'
 
@@ -387,6 +419,18 @@ export async function POST(request) {
     'Comparison: ' + f.cmpLabel + '  |  WHERE: ' + f.cmpCond,
     'current year = ' + f.curYear + '  |  comparison year = ' + f.cmpYear,
     '',
+  ].concat(userContext && (userContext.filters.length || userContext.kpi_focus.length) ? [
+    '## USER CONTEXT (applied to this dashboard)',
+    userContext.explanation || '',
+    userContext.filters.length
+      ? 'Active filters: ' + userContext.filters.map(function(f) { return f.field + ' ' + f.operator + ' ' + f.value }).join(', ')
+      : '',
+    userContext.kpi_focus.length
+      ? 'KPI focus fields: ' + userContext.kpi_focus.join(', ') + ' — PRIORITISE these in chart selection and KPI cards. Allocate at least 60% of chart slots to these KPIs and their breakdowns. Other KPIs may still appear but should receive fewer chart slots.'
+      : '',
+    'NOTE: All SQL templates already include the context filter — do NOT add extra WHERE conditions for the filter.',
+    '',
+  ] : []).concat([
     '## SQL TEMPLATES (replace __FIELD__, __KPI__, __DIM__, __AGG__ with actual values)',
     'T-SUM (KPI card, cumulative): ' + tplSum,
     'T-AVG (KPI card, point_in_time): ' + tplAvg,
