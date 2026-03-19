@@ -207,7 +207,7 @@ export async function POST(request) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: 'gpt-4o',
         max_tokens: 3000,
         temperature: 0.15,
         response_format: { type: 'json_object' },
@@ -237,7 +237,8 @@ export async function POST(request) {
       parsed.decisions.sort(function(a, b) { return (a.priority || 99) - (b.priority || 99) })
     }
 
-    return Response.json({ result: parsed, model: 'gpt-4o-mini' })
+    var usage = json.usage || {}
+    return Response.json({ result: parsed, model: 'gpt-4o', usage: { prompt_tokens: usage.prompt_tokens || 0, completion_tokens: usage.completion_tokens || 0, model: 'gpt-4o' } })
   } catch (err) {
     console.error('generate-decisions error:', err.message)
     return Response.json({ error: err.message || 'Failed to generate decisions.' }, { status: 500 })
