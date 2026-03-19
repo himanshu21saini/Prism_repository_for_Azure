@@ -12,20 +12,21 @@ var QUARTERS = ['Q1','Q2','Q3','Q4']
 var P = ['#00C8F0','#2B7FE3','#00B4A0','#7B8FF0','#F0A030','#9B7FE3','#10C48A','#E05555']
 
 // Convert a fiscal month (1–12) to a calendar month name
-// e.g. fm=1, start=11 → 'Nov', fm=3, start=11 → 'Jan'
 function fiscalMonthName(fm, fiscalStartMonth) {
   var calMonth = ((fiscalStartMonth - 1 + fm - 1) % 12) + 1
   return MONTHS[calMonth - 1]
 }
 
-// Build a short X-axis label for a fiscal month including the calendar year suffix
-// e.g. fm=3 (Jan), asOfCalYear=2026, asOfCalMonth=2, start=11 → 'Jan-26'
-function fiscalMonthLabel(asOfCalYear, asOfCalMonth, fm, fiscalStartMonth) {
+// Build a short X-axis label given a FISCAL YEAR number and fiscal month.
+// e.g. fiscalYear=2026, fm=1, start=11 → 'Nov-25'
+//      fiscalYear=2026, fm=3, start=11 → 'Jan-26'
+//      fiscalYear=2025, fm=6, start=11 → 'Apr-25'
+function fiscalMonthLabel(fiscalYear, fm, fiscalStartMonth) {
   var calMonth = ((fiscalStartMonth - 1 + fm - 1) % 12) + 1
-  // if calMonth < fiscalStartMonth it has crossed into the next calendar year
-  var calYear = calMonth < fiscalStartMonth
-    ? (asOfCalMonth >= fiscalStartMonth ? asOfCalYear + 1 : asOfCalYear)
-    : (asOfCalMonth >= fiscalStartMonth ? asOfCalYear : asOfCalYear - 1)
+  // If calMonth >= fiscalStartMonth, it belongs to the calendar year BEFORE fiscal year
+  // e.g. FY2026, FM1=Nov: calMonth=11 >= start=11 → calYear = 2026-1 = 2025
+  // e.g. FY2026, FM3=Jan: calMonth=1  <  start=11 → calYear = 2026
+  var calYear = calMonth >= fiscalStartMonth ? fiscalYear - 1 : fiscalYear
   return MONTHS[calMonth - 1] + '-' + String(calYear).slice(2)
 }
 
@@ -139,9 +140,8 @@ function buildComparisonData(rawData, timePeriod, accType, fiscalCtx) {
 
   return Array.from({ length: 12 }, function(_, i) {
     var fm = i + 1
-    var label = fiscal
-      ? fiscalMonthLabel(calYear, calMonth, fm, fsm)
-      : MONTHS[i]
+    // Label uses curYear's fiscal-to-calendar mapping so X axis shows current period months
+    var label = fiscal ? fiscalMonthLabel(curYear, fm, fsm) : MONTHS[i]
     return {
       label,
       curYear: fm <= cutoffFM ? (byYM[curYear+'-'+fm] !== undefined ? byYM[curYear+'-'+fm] : null) : null,
@@ -175,7 +175,7 @@ function buildForecastData(rawData, forecast, timePeriod, fiscalCtx) {
       var label = isQTD
         ? ('Q' + Math.ceil(fm / 3))
         : fiscal
-          ? fiscalMonthLabel(calYear, calMonth, fm, fsm)
+          ? fiscalMonthLabel(curFY, fm, fsm)
           : (MONTHS[fm - 1] + '-' + String(curFY).slice(2))
       return { label, actual: parseFloat(row.value), forecast: null, fc_low: null, fc_high: null }
     })
@@ -201,7 +201,7 @@ function buildForecastData(rawData, forecast, timePeriod, fiscalCtx) {
         var parts = String(f.period || '').split('-')
         var fy2 = parseInt(parts[0]); var fm2 = parseInt(parts[1])
         label = fiscal
-          ? fiscalMonthLabel(calYear, calMonth, fm2 + i + 1 > 12 ? fm2 : fm2, fsm)
+          ? fiscalMonthLabel(fy2, fm2, fsm)
           : (!isNaN(fm2) ? (MONTHS[fm2 - 1] + '-' + String(fy2).slice(2)) : f.period)
       }
       actual.push({ label, actual: null, forecast: f.forecast, fc_low: f.forecast_low, fc_high: f.forecast_high })
