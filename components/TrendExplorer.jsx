@@ -81,6 +81,49 @@ export default function TrendExplorer({ metadata, datasetId, onSimulate, onTrend
   var selectedMeta = kpiOptions.find(function(m) { return m.field_name === selectedField })
   var cached       = cache[selectedField]
 
+  // ── Background pre-fetch: silently fetch ALL KPIs on mount ───────────────
+  // This runs once after mount, fires a fetch for every KPI in parallel,
+  // and calls onTrendData for each so Dashboard's trendDataCache is fully
+  // populated before the user clicks Generate Report / Decisions.
+  // It does NOT touch selectedField, dataState, or the visible chart.
+  var [prefetchDone, setPrefetchDone] = useState(false)
+
+  useEffect(function() {
+    if (!datasetId || !onTrendData || prefetchDone || !kpiOptions.length) return
+    setPrefetchDone(true)
+
+    kpiOptions.forEach(function(meta) {
+      var field = meta.field_name
+      var acc   = meta.accumulation_type || 'cumulative'
+
+      fetch('/api/fetch-trend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ datasetId: datasetId, fieldName: field, accumulationType: acc, yearsBack: 3 }),
+      })
+        .then(function(r) { return r.json() })
+        .then(function(trendJson) {
+          if (trendJson.error || !trendJson.data) return
+          var trendData = trendJson.data || []
+          var agg = trendJson.agg || (acc === 'point_in_time' ? 'AVG' : 'SUM')
+          var sql = buildTrendSQL(datasetId, field, agg)
+
+          // Update cache so switching to this KPI is instant
+          setCache(function(p) {
+            if (p[field]) return p  // already fetched by user selection — don't overwrite
+            var n = Object.assign({}, p)
+            n[field] = { data: trendData, forecast: null, sql: sql }
+            return n
+          })
+
+          // This is the key call — notifies Dashboard for all KPIs, not just selected
+          onTrendData(field, trendData, meta)
+        })
+        .catch(function() {})  // non-fatal — silently skip failed fields
+    })
+  }, [datasetId])  // runs once when datasetId is available
+
+  // ── Selected KPI fetch (for chart display + forecast) ────────────────────
   useEffect(function() {
     if (!selectedField || !datasetId) return
     if (cache[selectedField]) { setDataState('done'); return }
