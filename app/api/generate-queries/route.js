@@ -1,38 +1,105 @@
 import { query } from '../../../lib/db'
+import { FISCAL_START_MONTH, MONTH_SHORT, toFiscal, fiscalRangeLabel } from '../../../lib/fiscal-config'
 
-var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+var MONTHS = MONTH_SHORT
 
 function quarterStart(m) { return Math.floor((m - 1) / 3) * 3 + 1 }
 
+function isFiscalField(yearField) {
+  return /fiscal/i.test(yearField || '')
+}
+
 function buildPeriodFilters(datasetId, tp) {
   var vt = tp.viewType
-  var yr = parseInt(tp.year)
-  var mo = parseInt(tp.month)
+  var yr = parseInt(tp.year)    // calendar year (as-of)
+  var mo = parseInt(tp.month)   // calendar month (as-of)
   var ct = tp.comparisonType
-
-  // Resolved field names — default to 'year'/'month' for backward compat
   var yf = tp.yearField  || 'year'
   var mf = tp.monthField || 'month'
+  var fiscal = isFiscalField(yf)
 
-  var curYear     = yr
-  var curMonthMin = vt === 'MTD' ? mo : vt === 'YTD' ? 1 : quarterStart(mo)
-  var curMonthMax = mo
-
+  var curYear, curMonthMin, curMonthMax
   var cmpYear, cmpMonthMin, cmpMonthMax
+  var viewLabel, cmpLabel
 
-  if (ct === 'YoY') {
-    cmpYear = yr - 1; cmpMonthMin = curMonthMin; cmpMonthMax = curMonthMax
-  } else if (ct === 'MoM') {
-    cmpYear = mo === 1 ? yr - 1 : yr
-    cmpMonthMin = cmpMonthMax = mo === 1 ? 12 : mo - 1
+  if (fiscal) {
+    // Translate calendar as-of date to fiscal month
+    var cur = toFiscal(yr, mo)
+    var curFM = cur.fiscalMonth
+
+    // Derive which fiscal year this as-of date belongs to
+    // If calMonth >= FISCAL_START_MONTH we are in the fiscal year that started this calendar year
+    // Otherwise we are in the fiscal year that started last calendar year
+    // The data stores fiscal year as an integer — we need to find the right one
+    // We don't track fiscal year number here, we just use curCond on Fiscal_Month
+    // and rely on the data's Fiscal_Year field being correct
+    // So: curYear in the SQL = the Fiscal_Year value for the as-of calendar month
+    // When calMonth >= FISCAL_START_MONTH: fiscal year started in this cal year, so Fiscal_Year = cal year + 1
+    // When calMonth < FISCAL_START_MONTH: fiscal year started last cal year, so Fiscal_Year = cal year
+    curYear = mo >= FISCAL_START_MONTH ? yr + 1 : yr
+
+    if (vt === 'MTD') {
+      curMonthMin = curFM; curMonthMax = curFM
+    } else if (vt === 'YTD') {
+      curMonthMin = 1; curMonthMax = curFM
+    } else {
+      var fqStart = quarterStart(curFM)
+      curMonthMin = fqStart; curMonthMax = Math.min(curFM, fqStart + 2)
+    }
+
+    if (ct === 'YoY') {
+      cmpYear = curYear - 1; cmpMonthMin = curMonthMin; cmpMonthMax = curMonthMax
+    } else if (ct === 'MoM') {
+      if (curFM === 1) { cmpYear = curYear - 1; cmpMonthMin = cmpMonthMax = 12 }
+      else             { cmpYear = curYear;     cmpMonthMin = cmpMonthMax = curFM - 1 }
+    } else {
+      var cqs = quarterStart(curFM)
+      if (cqs <= 3) { cmpYear = curYear - 1; cmpMonthMin = cqs + 9; cmpMonthMax = cmpMonthMin + 2 }
+      else          { cmpYear = curYear;     cmpMonthMin = cqs - 3; cmpMonthMax = cmpMonthMin + 2 }
+    }
+
+    // Calendar range labels e.g. "Nov 25–Feb 26 (YTD)"
+    var curRange = fiscalRangeLabel(yr, mo, curMonthMin, curMonthMax)
+    // For comparison, shift the as-of year by 1 back
+    var cmpAsOfYr = yr - 1; var cmpAsOfMo = mo
+    var cmpRange  = fiscalRangeLabel(cmpAsOfYr, cmpAsOfMo, cmpMonthMin, cmpMonthMax)
+    var cmpTag    = ct === 'YoY' ? '(YoY)' : ct === 'MoM' ? '(MoM)' : '(QoQ)'
+    viewLabel = curRange + ' (' + vt + ')'
+    cmpLabel  = 'vs ' + cmpRange + ' ' + cmpTag
+
   } else {
-    var cqs = quarterStart(mo)
-    cmpYear = cqs <= 3 ? yr - 1 : yr
-    cmpMonthMin = cqs <= 3 ? cqs + 9 : cqs - 3
-    cmpMonthMax = cmpMonthMin + 2
+    // Calendar mode — original logic unchanged
+    curYear     = yr
+    curMonthMin = vt === 'MTD' ? mo : vt === 'YTD' ? 1 : quarterStart(mo)
+    curMonthMax = mo
+
+    if (ct === 'YoY') {
+      cmpYear = yr - 1; cmpMonthMin = curMonthMin; cmpMonthMax = curMonthMax
+    } else if (ct === 'MoM') {
+      cmpYear = mo === 1 ? yr - 1 : yr
+      cmpMonthMin = cmpMonthMax = mo === 1 ? 12 : mo - 1
+    } else {
+      var cqs2 = quarterStart(mo)
+      cmpYear = cqs2 <= 3 ? yr - 1 : yr
+      cmpMonthMin = cqs2 <= 3 ? cqs2 + 9 : cqs2 - 3
+      cmpMonthMax = cmpMonthMin + 2
+    }
+
+    if (vt === 'MTD')      viewLabel = MONTHS[mo-1] + ' ' + yr + ' (MTD)'
+    else if (vt === 'YTD') viewLabel = 'Jan–' + MONTHS[mo-1] + ' ' + yr + ' (YTD)'
+    else                   viewLabel = 'Q' + Math.ceil(mo/3) + ' ' + yr + ' (QTD)'
+
+    if (ct === 'YoY') {
+      if (vt === 'MTD')      cmpLabel = 'vs ' + MONTHS[mo-1] + ' ' + cmpYear + ' (YoY)'
+      else if (vt === 'YTD') cmpLabel = 'vs Jan–' + MONTHS[mo-1] + ' ' + cmpYear + ' (YoY)'
+      else                   cmpLabel = 'vs Q' + Math.ceil(mo/3) + ' ' + cmpYear + ' (YoY)'
+    } else if (ct === 'MoM') {
+      cmpLabel = 'vs ' + MONTHS[cmpMonthMax-1] + ' ' + cmpYear + ' (MoM)'
+    } else {
+      cmpLabel = 'vs Q' + Math.ceil(cmpMonthMax/3) + ' ' + cmpYear + ' (QoQ)'
+    }
   }
 
-  // Build conditions using resolved field names
   function cond(year, mMin, mMax) {
     var y = "(data->>'" + yf + "')::integer = " + year
     var m = mMin === mMax
@@ -41,25 +108,10 @@ function buildPeriodFilters(datasetId, tp) {
     return y + ' AND ' + m
   }
 
-  var curCond = cond(curYear,  curMonthMin,  curMonthMax)
-  var cmpCond = cond(cmpYear,  cmpMonthMin,  cmpMonthMax)
+  var curCond = cond(curYear, curMonthMin, curMonthMax)
+  var cmpCond = cond(cmpYear, cmpMonthMin, cmpMonthMax)
 
-  var viewLabel, cmpLabel
-  if (vt === 'MTD')      viewLabel = MONTHS[mo-1] + ' ' + yr + ' (MTD)'
-  else if (vt === 'YTD') viewLabel = 'Jan-' + MONTHS[mo-1] + ' ' + yr + ' (YTD)'
-  else                   viewLabel = 'Q' + Math.ceil(mo/3) + ' ' + yr + ' (QTD)'
-
-  if (ct === 'YoY') {
-    if (vt === 'MTD')      cmpLabel = 'vs ' + MONTHS[mo-1] + ' ' + cmpYear + ' (YoY)'
-    else if (vt === 'YTD') cmpLabel = 'vs Jan-' + MONTHS[mo-1] + ' ' + cmpYear + ' (YoY)'
-    else                   cmpLabel = 'vs Q' + Math.ceil(mo/3) + ' ' + cmpYear + ' (YoY)'
-  } else if (ct === 'MoM') {
-    cmpLabel = 'vs ' + MONTHS[cmpMonthMax-1] + ' ' + cmpYear + ' (MoM)'
-  } else {
-    cmpLabel = 'vs Q' + Math.ceil(cmpMonthMax/3) + ' ' + cmpYear + ' (QoQ)'
-  }
-
-  return { curCond, cmpCond, curYear, cmpYear, viewLabel, cmpLabel, yf, mf }
+  return { curCond, cmpCond, curYear, cmpYear, viewLabel, cmpLabel, yf, mf, fiscal }
 }
 
 // ── PRE-ANALYSIS: compute real variance for every KPI × dimension pair ────────
