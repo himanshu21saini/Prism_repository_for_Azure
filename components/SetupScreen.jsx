@@ -12,6 +12,53 @@ var COMPARISON_OPTIONS = {
   MTD: [{ value: 'YoY', label: 'YoY' }, { value: 'MoM', label: 'MoM' }],
 }
 
+// Given year_month rows from metadata, detect available year+month field pairs.
+// Pairs are matched by naming convention: Report_Year↔Report_Month, Fiscal_Year↔Fiscal_Month etc.
+// Falls back to any single year_month field used for both if no pair is found.
+function detectPeriodPairs(ymRows) {
+  var yearFields  = ymRows.filter(function(r) { return /year/i.test(r.field_name) && !/month|qtr|quarter/i.test(r.field_name) })
+  var monthFields = ymRows.filter(function(r) { return /month/i.test(r.field_name) && !/year/i.test(r.field_name) })
+
+  var pairs = []
+
+  yearFields.forEach(function(yRow) {
+    // Extract prefix: Report_Year → Report, Fiscal_Year → Fiscal
+    var prefix = yRow.field_name.replace(/_?year/i, '').replace(/^_|_$/,'')
+    // Find matching month field with same prefix
+    var mRow = monthFields.find(function(m) {
+      var mPrefix = m.field_name.replace(/_?month/i, '').replace(/^_|_$/,'')
+      return mPrefix.toLowerCase() === prefix.toLowerCase()
+    })
+    if (mRow) {
+      pairs.push({
+        label:      (prefix || 'Default') + ' period',
+        yearField:  yRow.field_name,
+        monthField: mRow.field_name,
+        yearDisplay:  yRow.display_name || yRow.field_name,
+        monthDisplay: mRow.display_name || mRow.field_name,
+      })
+    }
+  })
+
+  // Fallback: if no pairs matched but we have year/month fields, use first available
+  if (!pairs.length && yearFields.length && monthFields.length) {
+    pairs.push({
+      label:      'Default period',
+      yearField:  yearFields[0].field_name,
+      monthField: monthFields[0].field_name,
+      yearDisplay:  yearFields[0].display_name || yearFields[0].field_name,
+      monthDisplay: monthFields[0].display_name || monthFields[0].field_name,
+    })
+  }
+
+  // Final fallback: legacy datasets without year_month type — use 'year'/'month'
+  if (!pairs.length) {
+    pairs.push({ label: 'Default period', yearField: 'year', monthField: 'month', yearDisplay: 'year', monthDisplay: 'month' })
+  }
+
+  return pairs
+}
+
 export default function SetupScreen({ onReady }) {
   var [datasets,     setDatasets]     = useState([])
   var [metaSets,     setMetaSets]     = useState([])
@@ -31,6 +78,9 @@ export default function SetupScreen({ onReady }) {
   var [working,      setWorking]      = useState(false)
   var [progress,     setProgress]     = useState('')
   var [error,        setError]        = useState('')
+  // Period field resolution
+  var [periodPairs,  setPeriodPairs]  = useState([])
+  var [selPairIdx,   setSelPairIdx]   = useState(0)
   var dataRef = useRef(); var metaRef = useRef()
 
   useEffect(function() { loadLists() }, [])
@@ -39,6 +89,20 @@ export default function SetupScreen({ onReady }) {
     var valid = allowed.some(function(o) { return o.value === compType })
     if (!valid && allowed.length > 0) setCompType(allowed[0].value)
   }, [viewType])
+
+  // When metadata selection changes, fetch year_month fields to build period pairs
+  useEffect(function() {
+    var metaId = metaMode === 'existing' ? selMeta : null
+    if (!metaId) { setPeriodPairs([]); setSelPairIdx(0); return }
+    fetch('/api/metadata-fields?metadataSetId=' + metaId + '&type=year_month')
+      .then(function(r) { return r.json() })
+      .then(function(j) {
+        var pairs = detectPeriodPairs(j.fields || [])
+        setPeriodPairs(pairs)
+        setSelPairIdx(0)
+      })
+      .catch(function() { setPeriodPairs([]); setSelPairIdx(0) })
+  }, [selMeta, metaMode])
 
   async function loadLists() {
     setLoadingLists(true)
@@ -67,13 +131,32 @@ export default function SetupScreen({ onReady }) {
       if (metaMode === 'upload') {
         if (!metaFile) { setError('Please select a metadata file.'); setWorking(false); return }
         setProgress('Saving metadata...')
-        var mf = new FormData(); mf.append('file', metaFile); mf.append('name', metaName || metaFile.name)
-        var mr = await fetch('/api/save-metadata', { method: 'POST', body: mf }); var mj = await mr.json()
+        var mf2 = new FormData(); mf2.append('file', metaFile); mf2.append('name', metaName || metaFile.name)
+        var mr = await fetch('/api/save-metadata', { method: 'POST', body: mf2 }); var mj = await mr.json()
         if (!mr.ok) throw new Error(mj.error || 'Metadata save failed.')
-        finalMetaId = String(mj.metadataSet.id); await loadLists()
+        finalMetaId = String(mj.metadataSet.id)
+
+        // After uploading new metadata, resolve period pairs from it
+        var mfRes = await fetch('/api/metadata-fields?metadataSetId=' + finalMetaId + '&type=year_month')
+        var mfJson = await mfRes.json()
+        var newPairs = detectPeriodPairs(mfJson.fields || [])
+        setPeriodPairs(newPairs); setSelPairIdx(0)
+        await loadLists()
       }
+
+      // Resolve which year/month fields to use
+      var activePairs = periodPairs.length ? periodPairs : [{ yearField: 'year', monthField: 'month' }]
+      var chosenPair  = activePairs[selPairIdx] || activePairs[0]
+
       setProgress('Composing intelligence queries...')
-      var timePeriod = { viewType, year: selYear, month: selMonth, comparisonType: compType }
+      var timePeriod = {
+        viewType,
+        year:           selYear,
+        month:          selMonth,
+        comparisonType: compType,
+        yearField:      chosenPair.yearField,
+        monthField:     chosenPair.monthField,
+      }
       var gqRes = await fetch('/api/generate-queries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ datasetId: finalDatasetId, metadataSetId: finalMetaId, timePeriod }) })
       var gqJson = await gqRes.json()
       if (!gqRes.ok) throw new Error(gqJson.error || 'Failed to generate queries.')
@@ -87,7 +170,8 @@ export default function SetupScreen({ onReady }) {
 
   var canBuild = !working && (dataMode === 'existing' ? !!selDataset : !!dataFile) && (metaMode === 'existing' ? !!selMeta : !!metaFile)
   var allowedComp = COMPARISON_OPTIONS[viewType] || []
-  var previewLabel = viewType + ' · ' + MONTH_NAMES[selMonth-1] + ' ' + selYear + ' · vs ' + compType
+  var activePair = (periodPairs[selPairIdx] || periodPairs[0])
+  var previewLabel = viewType + ' · ' + MONTH_NAMES[selMonth-1] + ' ' + selYear + ' · vs ' + compType + (activePair ? ' · ' + activePair.yearField : '')
 
   var selectStyle = {
     width: '100%', padding: '10px 14px', border: '1px solid var(--border)',
@@ -277,6 +361,29 @@ export default function SetupScreen({ onReady }) {
               </select>
             </div>
           </div>
+
+          {/* Period field selector — only shown when multiple pairs exist */}
+          {periodPairs.length > 1 && (
+            <div style={{ marginBottom: 14 }}>
+              <p style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 10, fontFamily: 'var(--font-body)' }}>
+                Period calendar to use
+              </p>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {periodPairs.map(function(pair, idx) {
+                  return (
+                    <Chip key={idx} active={selPairIdx === idx} onClick={function() { setSelPairIdx(idx) }}>
+                      {pair.label}
+                    </Chip>
+                  )
+                })}
+              </div>
+              {activePair && (
+                <p style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 6, fontFamily: 'var(--font-mono)' }}>
+                  Using: {activePair.yearField} + {activePair.monthField}
+                </p>
+              )}
+            </div>
+          )}
 
           <div style={{ padding: '10px 14px', background: 'var(--accent-dim)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--accent-border)', display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--accent)', boxShadow: '0 0 6px var(--accent)', flexShrink: 0 }} />
