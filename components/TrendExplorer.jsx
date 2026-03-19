@@ -144,8 +144,8 @@ function buildForecastData(rawData, forecast, timePeriod) {
     })
     .map(function(row) {
       var parts = String(row.period || '').split('-')
-      var m = parseInt(parts[1])
-      var label = isQTD ? ('Q' + Math.ceil(m / 3)) : MONTHS[m - 1]
+      var y2 = parseInt(parts[0]); var m2 = parseInt(parts[1])
+      var label = isQTD ? ('Q' + Math.ceil(m2 / 3)) : (MONTHS[m2 - 1] + '-' + String(y2).slice(2))
       return { label: label, actual: parseFloat(row.value), forecast: null, fc_low: null, fc_high: null }
     })
 
@@ -172,8 +172,8 @@ function buildForecastData(rawData, forecast, timePeriod) {
         label = 'Q' + (lastQ + i + 1)
       } else {
         var parts = String(f.period || '').split('-')
-        var m = parseInt(parts[1])
-        label = !isNaN(m) ? MONTHS[m - 1] : f.period
+        var fy2 = parseInt(parts[0]); var fm2 = parseInt(parts[1])
+        label = !isNaN(fm2) ? (MONTHS[fm2 - 1] + '-' + String(fy2).slice(2)) : f.period
       }
       actual.push({ label: label, actual: null, forecast: f.forecast, fc_low: f.forecast_low, fc_high: f.forecast_high })
     })
@@ -269,10 +269,24 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
     if (cached && cached.data && cached.forecast && cached.forecast !== false && cached.forecast !== null) {
       setDataState('done'); return
     }
+
+    // Helper: filter raw data to current year up to cutoff, for accurate forecast projection
+    function currentYearSeries(data) {
+      var cy = timePeriod && timePeriod.year ? parseInt(timePeriod.year) : new Date().getFullYear()
+      var cm = timePeriod && timePeriod.month ? parseInt(timePeriod.month) : 12
+      return (data || []).filter(function(row) {
+        var parts = String(row.period || '').split('-')
+        if (parts.length < 2) return false
+        var y = parseInt(parts[0]); var m = parseInt(parts[1])
+        return !isNaN(y) && !isNaN(m) && y === cy && m <= cm
+      })
+    }
+
     // Case 2: have data, need forecast
     if (cached && cached.data && cached.data.length >= 3) {
       setDataState('loading')
-      var seriesForFc = isQTD ? buildQtrSeriesForFc(cached.data) : cached.data
+      var curYearData = currentYearSeries(cached.data)
+      var seriesForFc = isQTD ? buildQtrSeriesForFc(curYearData.length >= 3 ? curYearData : cached.data) : (curYearData.length >= 3 ? curYearData : cached.data)
       fetch('/api/generate-forecast', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -309,6 +323,18 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
           setDataState('done'); return
         }
         var seriesForFc = isQTD ? buildQtrSeriesForFc(trendData) : trendData
+        // Filter to current year so forecast projects from the actual cutoff month
+        var curYearOnly = (trendData || []).filter(function(row) {
+          var parts = String(row.period || '').split('-')
+          if (parts.length < 2) return false
+          var y = parseInt(parts[0]); var m = parseInt(parts[1])
+          var cy = timePeriod && timePeriod.year ? parseInt(timePeriod.year) : new Date().getFullYear()
+          var cm = timePeriod && timePeriod.month ? parseInt(timePeriod.month) : 12
+          return !isNaN(y) && !isNaN(m) && y === cy && m <= cm
+        })
+        seriesForFc = isQTD
+          ? buildQtrSeriesForFc(curYearOnly.length >= 3 ? curYearOnly : trendData)
+          : (curYearOnly.length >= 3 ? curYearOnly : trendData)
         return fetch('/api/generate-forecast', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -494,7 +520,16 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
         <ResponsiveContainer width="100%" height={300}>
           <LineChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
             <CartesianGrid strokeDasharray="1 6" stroke="rgba(56,140,255,0.07)" vertical={false} />
-            <XAxis dataKey="label" tick={axStyle} axisLine={false} tickLine={false} />
+            <XAxis dataKey="label" tick={axStyle} axisLine={false} tickLine={false}
+              tickFormatter={function(v) {
+                if (!v || String(v).includes('-')) return v  // already has suffix or is Q1 etc
+                // Comparison mode: raw month names — append year suffix
+                var yy = chartMode === 'comparison'
+                  ? String(curYear).slice(2)
+                  : String(curYear).slice(2)
+                return v + '-' + yy
+              }}
+            />
             <YAxis tick={axStyle} width={62} tickFormatter={function(v) { return fmt(v) + (unit ? ' ' + unit : '') }} axisLine={false} tickLine={false} />
             <Tooltip contentStyle={ttStyle} formatter={function(v, n) {
               if (v === null || v === undefined) return null
@@ -517,7 +552,7 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
                 connectNulls={false} />
             )}
 
-            {/* FORECAST MODE: actual line + forecast dashed */}
+            {/* FORECAST MODE: actual + forecast + confidence band */}
             {chartMode === 'forecast' && (
               <Line type="monotone" dataKey="actual" name={String(curYear) + ' actual'}
                 stroke={color} strokeWidth={2.5}
@@ -530,6 +565,17 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
                 stroke={COLOR_FC} strokeWidth={2} strokeDasharray="6 3"
                 dot={{ r: 3.5, fill: COLOR_FC, strokeWidth: 0 }}
                 activeDot={{ r: 5 }} connectNulls={true} />
+            )}
+            {/* Confidence band — upper and lower bounds, very faint */}
+            {chartMode === 'forecast' && hasForecast && (
+              <Line type="monotone" dataKey="fc_high" name="Upper bound"
+                stroke={COLOR_FC} strokeWidth={1} strokeDasharray="2 4" strokeOpacity={0.4}
+                dot={false} activeDot={false} connectNulls={true} legendType="none" />
+            )}
+            {chartMode === 'forecast' && hasForecast && (
+              <Line type="monotone" dataKey="fc_low" name="Lower bound"
+                stroke={COLOR_FC} strokeWidth={1} strokeDasharray="2 4" strokeOpacity={0.4}
+                dot={false} activeDot={false} connectNulls={true} legendType="none" />
             )}
           </LineChart>
         </ResponsiveContainer>
