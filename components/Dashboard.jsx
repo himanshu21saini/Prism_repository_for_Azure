@@ -11,6 +11,7 @@ import SummaryPanel from './SummaryPanel'
 import DecisionPanel from './DecisionPanel'
 import WhatIfDrawer from './WhatIfDrawer'
 import TrendExplorer from './TrendExplorer'
+import TokenMeter from './TokenMeter'
 
 // ESSEX-inspired teal/blue palette
 var P  = ['#00C8F0','#2B7FE3','#00B4A0','#7B8FF0','#F0A030','#9B7FE3','#10C48A','#E05555']
@@ -117,6 +118,14 @@ export default function Dashboard({ session }) {
 
   var [whatifQuery, setWhatifQuery] = useState(null)
 
+  var [tokenCalls, setTokenCalls] = useState(function() {
+    // Seed with generate-queries usage that already ran in SetupScreen
+    if (session.initialUsage) {
+      return [{ label: 'queries', promptTokens: session.initialUsage.prompt_tokens, completionTokens: session.initialUsage.completion_tokens, model: session.initialUsage.model || 'gpt-4o' }]
+    }
+    return []
+  })
+
   // Accumulates trend data fetched by TrendExplorer so Generate Report/Decisions
   // can include it. Shape: { [field_name]: { data: [...], meta: {...} } }
   var [trendDataCache, setTrendDataCache] = useState({})
@@ -216,6 +225,9 @@ export default function Dashboard({ session }) {
       var json = await res.json()
       if (!res.ok) throw new Error(json.error || 'Failed.')
       setNarrative(json.result.narrative); setSummaryState('done')
+      if (json.usage) {
+        setTokenCalls(function(prev) { return prev.concat([{ label: 'summary', promptTokens: json.usage.prompt_tokens, completionTokens: json.usage.completion_tokens, model: json.usage.model || 'gpt-4o-mini' }]) })
+      }
     } catch (err) { setSummaryError(err.message); setSummaryState('error') }
   }
 
@@ -227,6 +239,9 @@ export default function Dashboard({ session }) {
       var json = await res.json()
       if (!res.ok) throw new Error(json.error || 'Failed.')
       setDecisionResult(json.result); setDecisionState('done')
+      if (json.usage) {
+        setTokenCalls(function(prev) { return prev.concat([{ label: 'decisions', promptTokens: json.usage.prompt_tokens, completionTokens: json.usage.completion_tokens, model: json.usage.model || 'gpt-4o' }]) })
+      }
     } catch (err) { setDecisionError(err.message); setDecisionState('error') }
   }
 
@@ -411,6 +426,14 @@ export default function Dashboard({ session }) {
               }
             </button>
           </div>
+        </div>
+
+        {/* Token meter — shown as soon as any LLM call has been made */}
+        {tokenCalls.length > 0 && (
+          <div style={{ marginTop: 10 }}>
+            <TokenMeter calls={tokenCalls} />
+          </div>
+        )}
         </div>
       )}
 
