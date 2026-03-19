@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from 'react'
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid,
+  LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, ReferenceLine,
 } from 'recharts'
 
+var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 var P = ['#00C8F0','#2B7FE3','#00B4A0','#7B8FF0','#F0A030','#9B7FE3','#10C48A','#E05555']
 
 var ttStyle = {
@@ -39,9 +40,6 @@ function StatPill({ label, value, color }) {
   )
 }
 
-// Build the trend SQL client-side — mirrors what fetch-trend runs server-side.
-// We use a broad year filter (last 3 years) since we don't know the range here.
-// The whatif API wraps this as a CTE and applies the scenario multiplier.
 function buildTrendSQL(datasetId, fieldName, agg) {
   var curYear = new Date().getFullYear()
   var minYear = curYear - 3
@@ -59,7 +57,44 @@ function buildTrendSQL(datasetId, fieldName, agg) {
   ].join('\n')
 }
 
-export default function TrendExplorer({ metadata, datasetId, onSimulate, onTrendData }) {
+// Transform flat {period:'YYYY-MM', value} series into
+// [{month:'Jan', curYear: v, cmpYear: v}, ...] for the two-line chart.
+// curYear line is capped at the selected month (respects YTD/MTD/QTD).
+// cmpYear line shows full 12 months.
+function buildChartData(rawData, timePeriod) {
+  var curYear  = timePeriod && timePeriod.year  ? parseInt(timePeriod.year)  : new Date().getFullYear()
+  var cmpYear  = curYear - 1
+  var cutoffMonth = timePeriod && timePeriod.month ? parseInt(timePeriod.month) : 12
+
+  // Index raw data by year+month
+  var byYearMonth = {}
+  ;(rawData || []).forEach(function(row) {
+    var parts = String(row.period || '').split('-')
+    if (parts.length < 2) return
+    var y = parseInt(parts[0])
+    var m = parseInt(parts[1])
+    if (isNaN(y) || isNaN(m)) return
+    var key = y + '-' + m
+    byYearMonth[key] = parseFloat(row.value)
+  })
+
+  // Build 12-slot array keyed by month name
+  return MONTHS.map(function(name, i) {
+    var monthNum = i + 1
+    var curVal = byYearMonth[curYear + '-' + monthNum]
+    var cmpVal = byYearMonth[cmpYear + '-' + monthNum]
+
+    return {
+      month:   name,
+      // Current year: only up to cutoff month
+      curYear: monthNum <= cutoffMonth ? (curVal !== undefined ? curVal : null) : null,
+      // Comparison year: full 12 months
+      cmpYear: cmpVal !== undefined ? cmpVal : null,
+    }
+  })
+}
+
+export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimulate, onTrendData }) {
 
   var kpiOptions = (metadata || []).filter(function(m) {
     return m.type === 'kpi' || m.type === 'derived_kpi'
@@ -77,17 +112,12 @@ export default function TrendExplorer({ metadata, datasetId, onSimulate, onTrend
   var [cache,         setCache]         = useState({})
   var [dataState,     setDataState]     = useState('idle')
   var [dataError,     setDataError]     = useState('')
+  var [prefetchDone,  setPrefetchDone]  = useState(false)
 
   var selectedMeta = kpiOptions.find(function(m) { return m.field_name === selectedField })
   var cached       = cache[selectedField]
 
-  // ── Background pre-fetch: silently fetch ALL KPIs on mount ───────────────
-  // This runs once after mount, fires a fetch for every KPI in parallel,
-  // and calls onTrendData for each so Dashboard's trendDataCache is fully
-  // populated before the user clicks Generate Report / Decisions.
-  // It does NOT touch selectedField, dataState, or the visible chart.
-  var [prefetchDone, setPrefetchDone] = useState(false)
-
+  // ── Background pre-fetch: all KPIs on mount ───────────────────────────────
   useEffect(function() {
     if (!datasetId || !onTrendData || prefetchDone || !kpiOptions.length) return
     setPrefetchDone(true)
@@ -108,30 +138,55 @@ export default function TrendExplorer({ metadata, datasetId, onSimulate, onTrend
           var agg = trendJson.agg || (acc === 'point_in_time' ? 'AVG' : 'SUM')
           var sql = buildTrendSQL(datasetId, field, agg)
 
-          // Update cache so switching to this KPI is instant
           setCache(function(p) {
-            if (p[field]) return p  // already fetched by user selection — don't overwrite
+            if (p[field]) return p
             var n = Object.assign({}, p)
             n[field] = { data: trendData, forecast: null, sql: sql }
             return n
           })
-
-          // This is the key call — notifies Dashboard for all KPIs, not just selected
           onTrendData(field, trendData, meta)
         })
-        .catch(function() {})  // non-fatal — silently skip failed fields
+        .catch(function() {})
     })
-  }, [datasetId])  // runs once when datasetId is available
+  }, [datasetId])
 
-  // ── Selected KPI fetch (for chart display + forecast) ────────────────────
+  // ── Selected KPI fetch: data + forecast ───────────────────────────────────
   useEffect(function() {
     if (!selectedField || !datasetId) return
-    if (cache[selectedField]) { setDataState('done'); return }
-
-    setDataState('loading')
-    setDataError('')
 
     var acc = (selectedMeta && selectedMeta.accumulation_type) || 'cumulative'
+
+    // If already fully cached (data + forecast), just set done
+    if (cached && cached.data && cached.forecast !== undefined && cached.forecast !== null) {
+      setDataState('done')
+      return
+    }
+
+    // If pre-fetch already got the data but no forecast yet, skip re-fetching data
+    if (cached && cached.data && cached.data.length >= 3 && cached.forecast === null) {
+      // Fetch forecast using existing data
+      setDataState('loading')
+      fetch('/api/generate-forecast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ seriesData: cached.data, valueKey: 'value', labelKey: 'period', horizonMonths: 3 }),
+      })
+        .then(function(r) { return r.json() })
+        .then(function(fcJson) {
+          setCache(function(p) {
+            var n = Object.assign({}, p)
+            n[selectedField] = Object.assign({}, p[selectedField], { forecast: fcJson.forecasts ? fcJson : null })
+            return n
+          })
+          setDataState('done')
+        })
+        .catch(function() { setDataState('done') })
+      return
+    }
+
+    // Full fetch: data + forecast
+    setDataState('loading')
+    setDataError('')
 
     fetch('/api/fetch-trend', {
       method: 'POST',
@@ -143,15 +198,12 @@ export default function TrendExplorer({ metadata, datasetId, onSimulate, onTrend
         if (trendJson.error) throw new Error(trendJson.error)
         var trendData = trendJson.data || []
         var agg = trendJson.agg || (acc === 'point_in_time' ? 'AVG' : 'SUM')
-
-        // Build the SQL string so WhatIfDrawer can use it
         var sql = buildTrendSQL(datasetId, selectedField, agg)
 
+        if (onTrendData) onTrendData(selectedField, trendData, selectedMeta)
+
         if (trendData.length < 3) {
-          var entry = { data: trendData, forecast: null, sql: sql }
-          setCache(function(p) { var n = Object.assign({}, p); n[selectedField] = entry; return n })
-          // Notify Dashboard even with short series
-          if (onTrendData) onTrendData(selectedField, trendData, selectedMeta)
+          setCache(function(p) { var n = Object.assign({}, p); n[selectedField] = { data: trendData, forecast: null, sql: sql }; return n })
           setDataState('done')
           return
         }
@@ -163,10 +215,7 @@ export default function TrendExplorer({ metadata, datasetId, onSimulate, onTrend
         })
           .then(function(r) { return r.json() })
           .then(function(fcJson) {
-            var entry = { data: trendData, forecast: fcJson.forecasts ? fcJson : null, sql: sql }
-            setCache(function(p) { var n = Object.assign({}, p); n[selectedField] = entry; return n })
-            // Notify Dashboard so it can include this data in Generate Report / Decisions
-            if (onTrendData) onTrendData(selectedField, trendData, selectedMeta)
+            setCache(function(p) { var n = Object.assign({}, p); n[selectedField] = { data: trendData, forecast: fcJson.forecasts ? fcJson : null, sql: sql }; return n })
             setDataState('done')
           })
       })
@@ -179,18 +228,17 @@ export default function TrendExplorer({ metadata, datasetId, onSimulate, onTrend
   var forecast  = cached && cached.forecast
   var cachedSQL = cached && cached.sql
 
-  var merged = trendData.slice()
-  if (forecast && forecast.forecasts) {
-    forecast.forecasts.forEach(function(f) {
-      merged.push({ period: f.period, value: null, forecast: f.forecast, forecast_low: f.forecast_low, forecast_high: f.forecast_high })
-    })
-  }
+  // Build the two-line chart data: {month, curYear, cmpYear}
+  var chartData   = buildChartData(trendData, timePeriod)
+  var curYearLabel = timePeriod ? String(timePeriod.year)  : 'Current year'
+  var cmpYearLabel = timePeriod ? String(parseInt(timePeriod.year) - 1) : 'Prior year'
 
-  var histVals = trendData.map(function(r) { return parseFloat(r.value) }).filter(function(v) { return !isNaN(v) })
-  var latest   = histVals[histVals.length - 1]
-  var earliest = histVals[0]
+  // Quick stats from current year data
+  var curVals = chartData.map(function(r) { return r.curYear }).filter(function(v) { return v !== null && !isNaN(v) })
+  var latest   = curVals[curVals.length - 1]
+  var earliest = curVals[0]
   var totalChg = (earliest && earliest !== 0) ? ((latest - earliest) / Math.abs(earliest) * 100) : null
-  var maxVal   = histVals.length ? Math.max.apply(null, histVals) : null
+  var maxVal   = curVals.length ? Math.max.apply(null, curVals) : null
 
   var unit  = (selectedMeta && selectedMeta.unit) || ''
   var color = P[kpiOptions.indexOf(selectedMeta) % P.length]
@@ -199,15 +247,9 @@ export default function TrendExplorer({ metadata, datasetId, onSimulate, onTrend
     ? (forecast.trend === 'up' ? '↑' : forecast.trend === 'down' ? '↓' : '→') + ' ' + forecast.confidence + ' confidence'
     : null
 
-  // simulateQuery now includes the SQL — WhatIfDrawer will work correctly
   var simulateQuery = {
-    id:         selectedField,
-    title:      (selectedMeta && selectedMeta.display_name) || selectedField,
-    chart_type: 'area',
-    label_key:  'period',
-    value_key:  'value',
-    unit:       unit,
-    sql:        cachedSQL || null,
+    id: selectedField, title: (selectedMeta && selectedMeta.display_name) || selectedField,
+    chart_type: 'area', label_key: 'period', value_key: 'value', unit: unit, sql: cachedSQL || null,
   }
 
   return (
@@ -221,7 +263,6 @@ export default function TrendExplorer({ metadata, datasetId, onSimulate, onTrend
 
       {/* ── Header ─────────────────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-
         <p style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.14em', color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', flexShrink: 0 }}>
           Trend Explorer
         </p>
@@ -254,7 +295,7 @@ export default function TrendExplorer({ metadata, datasetId, onSimulate, onTrend
 
         {dataState === 'loading' && (
           <span style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span className="spinner" />fetching trend...
+            <span className="spinner" />loading...
           </span>
         )}
         {trendBadge && dataState === 'done' && (
@@ -270,7 +311,7 @@ export default function TrendExplorer({ metadata, datasetId, onSimulate, onTrend
 
         {dataState === 'done' && latest != null && <StatPill label="Latest" value={fmt(latest) + (unit ? ' ' + unit : '')} color={color} />}
         {dataState === 'done' && totalChg != null && (
-          <StatPill label="Period Δ" value={(totalChg >= 0 ? '+' : '') + totalChg.toFixed(1) + '%'} color={totalChg >= 0 ? '#10C48A' : '#E05555'} />
+          <StatPill label="YTD Δ" value={(totalChg >= 0 ? '+' : '') + totalChg.toFixed(1) + '%'} color={totalChg >= 0 ? '#10C48A' : '#E05555'} />
         )}
         {dataState === 'done' && maxVal != null && <StatPill label="Peak" value={fmt(maxVal) + (unit ? ' ' + unit : '')} />}
 
@@ -304,7 +345,7 @@ export default function TrendExplorer({ metadata, datasetId, onSimulate, onTrend
 
       {dataState === 'loading' && (
         <div style={{ height: 300, display: 'flex', alignItems: 'flex-end', gap: 3, padding: '0 8px' }}>
-          {Array.from({ length: 28 }).map(function(_, i) {
+          {Array.from({ length: 12 }).map(function(_, i) {
             return <div key={i} className="skeleton" style={{ flex: 1, height: (35 + Math.abs(Math.sin(i * 0.5)) * 50) + '%', borderRadius: '2px 2px 0 0' }} />
           })}
         </div>
@@ -318,60 +359,59 @@ export default function TrendExplorer({ metadata, datasetId, onSimulate, onTrend
         </div>
       )}
 
+      {/* ── Two-line chart: current year vs comparison year ─────────── */}
       {dataState === 'done' && trendData.length > 0 && (
         <ResponsiveContainer width="100%" height={300}>
-          <AreaChart data={merged} margin={{ top: 8, right: 16, left: 0, bottom: 32 }}>
-            <defs>
-              <linearGradient id="trend-fill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={color} stopOpacity={0.25} />
-                <stop offset="100%" stopColor={color} stopOpacity={0.01} />
-              </linearGradient>
-              <linearGradient id="fc-fill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#F0A030" stopOpacity={0.2} />
-                <stop offset="100%" stopColor="#F0A030" stopOpacity={0.01} />
-              </linearGradient>
-            </defs>
+          <LineChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
             <CartesianGrid strokeDasharray="1 6" stroke="rgba(56,140,255,0.07)" vertical={false} />
-            <XAxis dataKey="period" tick={axStyle} angle={-30} textAnchor="end" interval={Math.max(0, Math.floor(merged.length / 14) - 1)} axisLine={false} tickLine={false} />
+            <XAxis dataKey="month" tick={axStyle} axisLine={false} tickLine={false} />
             <YAxis tick={axStyle} width={62} tickFormatter={function(v) { return fmt(v) + (unit ? ' ' + unit : '') }} axisLine={false} tickLine={false} />
-            <Tooltip contentStyle={ttStyle} formatter={function(v, n) {
-              if (v === null || v === undefined) return null
-              return [fmt(v) + (unit ? ' ' + unit : ''), n]
-            }} />
-            {forecast && forecast.forecasts && trendData.length > 0 && (
-              <ReferenceLine x={trendData[trendData.length - 1].period} stroke="rgba(240,160,48,0.3)" strokeDasharray="3 3"
-                label={{ value: 'Forecast →', position: 'insideTopRight', fontSize: 9, fill: '#F0A030', fontFamily: 'var(--font-mono)' }} />
-            )}
-            <Area type="monotone" dataKey="value" name={(selectedMeta && selectedMeta.display_name) || selectedField}
-              stroke={color} strokeWidth={2} fill="url(#trend-fill)"
-              dot={{ r: 2.5, fill: color, strokeWidth: 0 }}
+            <Tooltip
+              contentStyle={ttStyle}
+              formatter={function(v, n) {
+                if (v === null || v === undefined) return null
+                return [fmt(v) + (unit ? ' ' + unit : ''), n]
+              }}
+            />
+            <Legend wrapperStyle={{ fontSize: 10, paddingTop: 8, fontFamily: "'Plus Jakarta Sans', system-ui", color: '#3D6080' }} />
+
+            {/* Comparison year — full 12 months, dashed, muted */}
+            <Line
+              type="monotone"
+              dataKey="cmpYear"
+              name={cmpYearLabel}
+              stroke={color}
+              strokeWidth={1.5}
+              strokeDasharray="5 3"
+              strokeOpacity={0.45}
+              dot={{ r: 2, fill: color, strokeWidth: 0, fillOpacity: 0.45 }}
+              activeDot={{ r: 4 }}
+              connectNulls={false}
+            />
+
+            {/* Current year — solid, stops at cutoff month */}
+            <Line
+              type="monotone"
+              dataKey="curYear"
+              name={curYearLabel}
+              stroke={color}
+              strokeWidth={2.5}
+              dot={{ r: 3, fill: color, strokeWidth: 0 }}
               activeDot={{ r: 5, fill: color, stroke: 'var(--bg)', strokeWidth: 2 }}
-              connectNulls={false} />
-            {forecast && forecast.forecasts && (
-              <Area type="monotone" dataKey="forecast" name="Forecast"
-                stroke="#F0A030" strokeWidth={2} strokeDasharray="6 3" fill="url(#fc-fill)"
-                dot={{ r: 3.5, fill: '#F0A030', strokeWidth: 0 }} activeDot={{ r: 5 }} connectNulls={true} />
-            )}
-            {forecast && forecast.forecasts && (
-              <Area type="monotone" dataKey="forecast_high" stroke="#F0A030" strokeWidth={0.5} strokeDasharray="2 5" fill="none" dot={false} activeDot={false} connectNulls legendType="none" />
-            )}
-            {forecast && forecast.forecasts && (
-              <Area type="monotone" dataKey="forecast_low" stroke="#F0A030" strokeWidth={0.5} strokeDasharray="2 5" fill="none" dot={false} activeDot={false} connectNulls legendType="none" />
-            )}
-            {forecast && forecast.forecasts && (
-              <Legend wrapperStyle={{ fontSize: 10, paddingTop: 8, fontFamily: "'Plus Jakarta Sans', system-ui", color: '#3D6080' }} />
-            )}
-          </AreaChart>
+              connectNulls={false}
+            />
+          </LineChart>
         </ResponsiveContainer>
       )}
 
+      {/* Forecast footer */}
       {forecast && dataState === 'done' && (
         <div style={{ display: 'flex', gap: 16, marginTop: 10, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>Method: {forecast.method || 'linear_regression'}</span>
+          <span style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>Forecast method: {forecast.method || 'linear_regression'}</span>
           <span style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>R²: {forecast.r_squared != null ? forecast.r_squared : '—'}</span>
           {forecast.forecasts && forecast.forecasts[0] && (
             <span style={{ fontSize: 10, color: '#F0A030', fontFamily: 'var(--font-mono)' }}>
-              Next period: {fmt(forecast.forecasts[0].forecast)}{unit ? ' ' + unit : ''} ({fmt(forecast.forecasts[0].forecast_low)} – {fmt(forecast.forecasts[0].forecast_high)})
+              Next month: {fmt(forecast.forecasts[0].forecast)}{unit ? ' ' + unit : ''} ({fmt(forecast.forecasts[0].forecast_low)} – {fmt(forecast.forecasts[0].forecast_high)})
             </span>
           )}
         </div>
