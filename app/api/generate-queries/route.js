@@ -258,9 +258,10 @@ export async function POST(request) {
     return p === 'high' ? 3 : p === 'medium' ? 2 : 1
   }
 
-  var kpis    = metaRows.filter(function(m) { return m.type === 'kpi' }).sort(function(a,b) { return pri(b)-pri(a) })
-  var derived = metaRows.filter(function(m) { return m.type === 'derived_kpi' })
-  var dims    = metaRows.filter(function(m) { return m.type === 'dimension' })
+  // is_output = 'N' rows are excluded entirely — LLM never sees them
+  var kpis    = metaRows.filter(function(m) { return m.type === 'kpi'         && m.is_output !== 'N' }).sort(function(a,b) { return pri(b)-pri(a) })
+  var derived = metaRows.filter(function(m) { return m.type === 'derived_kpi' && m.is_output !== 'N' })
+  var dims    = metaRows.filter(function(m) { return m.type === 'dimension'   && m.is_output !== 'N' })
 
   var topKpis    = kpis.slice(0, 6)
   var topDerived = derived.slice(0, 4)
@@ -274,16 +275,17 @@ export async function POST(request) {
   function fieldList(arr) {
     return arr.map(function(m) {
       return {
-        field_name:        m.field_name,
-        display_name:      m.display_name,
-        unit:              m.unit || '',
-        definition:        m.definition || '',
-        aggregation:       m.aggregation || 'SUM',
-        business_priority: m.business_priority || 'Medium',
-        accumulation_type: m.accumulation_type || 'cumulative',
-        calculation_logic: m.type === 'derived_kpi' ? (m.calculation_logic || '') : undefined,
-        dependencies:      m.type === 'derived_kpi' ? (m.dependencies || '') : undefined,
-        benchmark:         m.benchmark || '',
+        field_name:           m.field_name,
+        display_name:         m.display_name,
+        unit:                 m.unit || '',
+        definition:           m.definition || '',
+        aggregation:          m.aggregation || 'SUM',
+        business_priority:    m.business_priority || 'Medium',
+        accumulation_type:    m.accumulation_type || 'cumulative',
+        favorable_direction:  m.favorable_direction || 'i',
+        calculation_logic:    m.type === 'derived_kpi' ? (m.calculation_logic || '') : undefined,
+        dependencies:         m.type === 'derived_kpi' ? (m.dependencies || '') : undefined,
+        benchmark:            m.benchmark || '',
       }
     })
   }
@@ -340,6 +342,12 @@ export async function POST(request) {
     '',
     '## ACCUMULATION TYPE',
     'cumulative → SUM | point_in_time → AVG. Check accumulation_type on each field.',
+    '',
+    '## FAVORABLE DIRECTION',
+    'Each KPI has a favorable_direction: "i" = increase is good (revenue, income, customers)',
+    '"d" = decrease is good (cost, NPA ratio, expenses, churn).',
+    'Use this when writing the insight field — frame changes correctly.',
+    'E.g. if NPA ratio (d) is rising, the insight should flag this as a risk, not growth.',
     '',
     '## PRE-ANALYSIS: DATA-DRIVEN VARIANCE SCORES (computed from actual data)',
     preAnalysisText,
