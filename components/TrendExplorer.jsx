@@ -140,11 +140,11 @@ function buildComparisonData(rawData, timePeriod, accType, fiscalCtx) {
 
   return Array.from({ length: 12 }, function(_, i) {
     var fm = i + 1
-    var label    = fiscal ? fiscalMonthLabel(curYear,  fm, fsm) : MONTHS[i]
-    var cmpLabel = fiscal ? fiscalMonthLabel(cmpYear,  fm, fsm) : MONTHS[i]
+    // Fiscal: just show month name (Nov, Dec, Jan...) — no year suffix to avoid confusion
+    // Calendar: show month name as-is (Jan, Feb...)
+    var label = fiscal ? fiscalMonthName(fm, fsm) : MONTHS[i]
     return {
       label,
-      cmpLabel,
       curYear: fm <= cutoffFM ? (byYM[curYear+'-'+fm] !== undefined ? byYM[curYear+'-'+fm] : null) : null,
       cmpYear: byYM[cmpYear+'-'+fm] !== undefined ? byYM[cmpYear+'-'+fm] : null,
     }
@@ -569,32 +569,10 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
             <CartesianGrid strokeDasharray="1 6" stroke="rgba(56,140,255,0.07)" vertical={false} />
             <XAxis dataKey="label" tick={axStyle} axisLine={false} tickLine={false} />
             <YAxis tick={axStyle} width={62} tickFormatter={function(v) { return fmt(v) + (unit ? ' ' + unit : '') }} axisLine={false} tickLine={false} />
-            <Tooltip
-              contentStyle={ttStyle}
-              content={function(props) {
-                if (!props.active || !props.payload || !props.payload.length) return null
-                var row = props.payload[0] && props.payload[0].payload
-                return (
-                  <div style={ttStyle}>
-                    {props.payload.map(function(entry, i) {
-                      if (entry.value === null || entry.value === undefined) return null
-                      // Use cmpLabel for the comparison series in fiscal mode
-                      var dateLabel = (entry.dataKey === 'cmpYear' && row && row.cmpLabel)
-                        ? row.cmpLabel
-                        : (row && row.label) || props.label
-                      return (
-                        <div key={i} style={{ marginBottom: i < props.payload.length - 1 ? 4 : 0 }}>
-                          <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{dateLabel} · </span>
-                          <span style={{ color: entry.stroke || 'var(--text-accent)', fontWeight: 600 }}>
-                            {entry.name}: {fmt(entry.value)}{unit ? ' ' + unit : ''}
-                          </span>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )
-              }}
-            />
+            <Tooltip contentStyle={ttStyle} formatter={function(v, n) {
+              if (v === null || v === undefined) return null
+              return [fmt(v) + (unit ? ' ' + unit : ''), n]
+            }} />
             <Legend wrapperStyle={{ fontSize: 10, paddingTop: 8, fontFamily: "'Plus Jakarta Sans', system-ui", color: '#3D6080' }} />
 
             {/* COMPARISON MODE: two year lines */}
