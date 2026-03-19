@@ -56,19 +56,20 @@ function ModeButton({ label, active, onClick }) {
   )
 }
 
-function buildTrendSQL(datasetId, fieldName, agg) {
+function buildTrendSQL(datasetId, fieldName, agg, yf, mf) {
+  yf = yf || 'year'; mf = mf || 'month'
   var curYear = new Date().getFullYear()
   var minYear = curYear - 3
   return [
     'SELECT',
-    "  CONCAT(data->>'year', '-', LPAD(CAST((data->>'month')::integer AS TEXT), 2, '0')) AS period,",
+    "  CONCAT(data->>'" + yf + "', '-', LPAD(CAST((data->>'" + mf + "')::integer AS TEXT), 2, '0')) AS period,",
     '  ' + agg + "(COALESCE((data->>'" + fieldName + "')::numeric, 0)) AS value",
     'FROM dataset_rows',
     'WHERE dataset_id = ' + datasetId,
-    "  AND (data->>'year')::integer >= " + minYear,
-    "  AND (data->>'month') IS NOT NULL",
-    "  AND (data->>'year') IS NOT NULL",
-    "GROUP BY data->>'year', data->>'month'",
+    "  AND (data->>'" + yf + "')::integer >= " + minYear,
+    "  AND (data->>'" + mf + "') IS NOT NULL",
+    "  AND (data->>'" + yf + "') IS NOT NULL",
+    "GROUP BY data->>'" + yf + "', data->>'" + mf + "'",
     'ORDER BY period ASC',
   ].join('\n')
 }
@@ -185,6 +186,8 @@ function buildForecastData(rawData, forecast, timePeriod) {
 export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimulate, onTrendData }) {
 
   var isQTD = timePeriod && timePeriod.viewType === 'QTD'
+  var yf    = (timePeriod && timePeriod.yearField)  || 'year'
+  var mf    = (timePeriod && timePeriod.monthField) || 'month'
 
   var kpiOptions = (metadata || []).filter(function(m) {
     return (m.type === 'kpi' || m.type === 'derived_kpi') && m.is_output !== 'N'
@@ -218,7 +221,7 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
       fetch('/api/fetch-trend', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ datasetId: datasetId, fieldName: field, accumulationType: acc, yearsBack: 3 }),
+        body: JSON.stringify({ datasetId: datasetId, fieldName: field, accumulationType: acc, yearsBack: 3, yearField: yf, monthField: mf }),
       })
         .then(function(r) { return r.json() })
         .then(function(j) {
@@ -227,7 +230,7 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
           setCache(function(p) {
             if (p[field]) return p
             var n = Object.assign({}, p)
-            n[field] = { data: j.data, forecast: null, sql: buildTrendSQL(datasetId, field, agg) }
+            n[field] = { data: j.data, forecast: null, sql: buildTrendSQL(datasetId, field, agg, yf, mf) }
             return n
           })
           onTrendData(field, j.data, meta)
@@ -250,14 +253,14 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
       fetch('/api/fetch-trend', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ datasetId: datasetId, fieldName: selectedField, accumulationType: acc, yearsBack: 3 }),
+        body: JSON.stringify({ datasetId: datasetId, fieldName: selectedField, accumulationType: acc, yearsBack: 3, yearField: yf, monthField: mf }),
       })
         .then(function(r) { return r.json() })
         .then(function(j) {
           if (j.error) throw new Error(j.error)
           var agg = j.agg || (acc === 'point_in_time' ? 'AVG' : 'SUM')
           if (onTrendData) onTrendData(selectedField, j.data || [], selectedMeta)
-          setCache(function(p) { var n = Object.assign({}, p); n[selectedField] = { data: j.data || [], forecast: null, sql: buildTrendSQL(datasetId, selectedField, agg) }; return n })
+          setCache(function(p) { var n = Object.assign({}, p); n[selectedField] = { data: j.data || [], forecast: null, sql: buildTrendSQL(datasetId, selectedField, agg, yf, mf) }; return n })
           setDataState('done')
         })
         .catch(function(err) { setDataError(err.message); setDataState('error') })
@@ -310,7 +313,7 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
     fetch('/api/fetch-trend', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ datasetId: datasetId, fieldName: selectedField, accumulationType: acc, yearsBack: 3 }),
+      body: JSON.stringify({ datasetId: datasetId, fieldName: selectedField, accumulationType: acc, yearsBack: 3, yearField: yf, monthField: mf }),
     })
       .then(function(r) { return r.json() })
       .then(function(j) {
@@ -319,11 +322,10 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
         var agg = j.agg || (acc === 'point_in_time' ? 'AVG' : 'SUM')
         if (onTrendData) onTrendData(selectedField, trendData, selectedMeta)
         if (trendData.length < 3) {
-          setCache(function(p) { var n = Object.assign({}, p); n[selectedField] = { data: trendData, forecast: false, sql: buildTrendSQL(datasetId, selectedField, agg) }; return n })
+          setCache(function(p) { var n = Object.assign({}, p); n[selectedField] = { data: trendData, forecast: false, sql: buildTrendSQL(datasetId, selectedField, agg, yf, mf) }; return n })
           setDataState('done'); return
         }
         var seriesForFc = isQTD ? buildQtrSeriesForFc(trendData) : trendData
-        // Filter to current year so forecast projects from the actual cutoff month
         var curYearOnly = (trendData || []).filter(function(row) {
           var parts = String(row.period || '').split('-')
           if (parts.length < 2) return false
@@ -343,7 +345,7 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
           .then(function(r) { return r.json() })
           .then(function(fcJson) {
             var fcResult = (fcJson && fcJson.forecasts && fcJson.forecasts.length > 0) ? fcJson : false
-            setCache(function(p) { var n = Object.assign({}, p); n[selectedField] = { data: trendData, forecast: fcResult, sql: buildTrendSQL(datasetId, selectedField, agg) }; return n })
+            setCache(function(p) { var n = Object.assign({}, p); n[selectedField] = { data: trendData, forecast: fcResult, sql: buildTrendSQL(datasetId, selectedField, agg, yf, mf) }; return n })
             setDataState('done')
           })
       })
