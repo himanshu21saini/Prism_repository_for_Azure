@@ -474,7 +474,10 @@ export default function Dashboard({ session }) {
             var row    = r.data[0] || {}
             var curKey = r.current_key  || r.value_key || 'current_value'
             var cmpKey = r.comparison_key || 'comparison_value'
-            return <KPICard key={r.id} title={r.title} value={row[curKey]} unit={r.unit} comparisonValue={row[cmpKey]} compLabel={periodInfo.cmpLabel} index={i} />
+            // Look up favorable_direction from metadata by matching field_name to the result id
+            var meta   = metadata.find(function(m) { return m.field_name === r.id || (r.title || '').toLowerCase().includes((m.display_name || '').toLowerCase()) })
+            var favDir = meta && meta.favorable_direction ? meta.favorable_direction : 'i'
+            return <KPICard key={r.id} title={r.title} value={row[curKey]} unit={r.unit} comparisonValue={row[cmpKey]} compLabel={periodInfo.cmpLabel} index={i} favorableDirection={favDir} />
           })}
         </div>
       )}
