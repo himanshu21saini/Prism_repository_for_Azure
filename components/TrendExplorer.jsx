@@ -244,15 +244,14 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
     if (!selectedField || !datasetId) return
     var acc = (selectedMeta && selectedMeta.accumulation_type) || 'cumulative'
 
-    // Already fully cached
+    // Already fully cached (forecast is an object or explicitly false = fetched but empty)
     if (cached && cached.data && cached.forecast !== null && cached.forecast !== undefined) {
       setDataState('done'); return
     }
 
-    // Data cached, need forecast
+    // Data cached by prefetch (forecast === null = not yet fetched), now fetch forecast
     if (cached && cached.data && cached.data.length >= 3 && cached.forecast === null) {
       setDataState('loading')
-      // For QTD: aggregate to quarterly series before sending to forecast API
       var seriesForFc = isQTD
         ? buildQuarterlySeriesForForecast(cached.data, timePeriod)
         : cached.data
@@ -263,9 +262,11 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
       })
         .then(function(r) { return r.json() })
         .then(function(fcJson) {
+          // Use false (not null) to mark "fetched but empty" — prevents infinite retry
+          var fcResult = (fcJson.forecasts && fcJson.forecasts.length > 0) ? fcJson : false
           setCache(function(p) {
             var n = Object.assign({}, p)
-            n[selectedField] = Object.assign({}, p[selectedField], { forecast: fcJson.forecasts ? fcJson : null })
+            n[selectedField] = Object.assign({}, p[selectedField], { forecast: fcResult })
             return n
           })
           setDataState('done')
@@ -300,7 +301,8 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
         })
           .then(function(r) { return r.json() })
           .then(function(fcJson) {
-            setCache(function(p) { var n = Object.assign({}, p); n[selectedField] = { data: trendData, forecast: fcJson.forecasts ? fcJson : null, sql: sql }; return n })
+            var fcResult = (fcJson.forecasts && fcJson.forecasts.length > 0) ? fcJson : false
+            setCache(function(p) { var n = Object.assign({}, p); n[selectedField] = { data: trendData, forecast: fcResult, sql: sql }; return n })
             setDataState('done')
           })
       })
@@ -310,7 +312,8 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
   if (!kpiOptions.length) return null
 
   var trendData = (cached && cached.data) || []
-  var forecast  = cached && cached.forecast
+  // forecast is: null = not fetched, false = fetched but empty, object = valid forecast
+  var forecast  = (cached && cached.forecast && cached.forecast !== false) ? cached.forecast : null
   var cachedSQL = cached && cached.sql
   var accType   = (selectedMeta && selectedMeta.accumulation_type) || 'cumulative'
 
