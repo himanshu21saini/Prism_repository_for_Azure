@@ -10,6 +10,10 @@ function buildPeriodFilters(datasetId, tp) {
   var mo = parseInt(tp.month)
   var ct = tp.comparisonType
 
+  // Resolved field names — default to 'year'/'month' for backward compat
+  var yf = tp.yearField  || 'year'
+  var mf = tp.monthField || 'month'
+
   var curYear     = yr
   var curMonthMin = vt === 'MTD' ? mo : vt === 'YTD' ? 1 : quarterStart(mo)
   var curMonthMax = mo
@@ -28,13 +32,17 @@ function buildPeriodFilters(datasetId, tp) {
     cmpMonthMax = cmpMonthMin + 2
   }
 
-  var curCond = curMonthMin === curMonthMax
-    ? "(data->>'year')::integer = " + curYear + " AND (data->>'month')::integer = " + curMonthMax
-    : "(data->>'year')::integer = " + curYear + " AND (data->>'month')::integer >= " + curMonthMin + " AND (data->>'month')::integer <= " + curMonthMax
+  // Build conditions using resolved field names
+  function cond(year, mMin, mMax) {
+    var y = "(data->>'" + yf + "')::integer = " + year
+    var m = mMin === mMax
+      ? "(data->>'" + mf + "')::integer = " + mMax
+      : "(data->>'" + mf + "')::integer >= " + mMin + " AND (data->>'" + mf + "')::integer <= " + mMax
+    return y + ' AND ' + m
+  }
 
-  var cmpCond = cmpMonthMin === cmpMonthMax
-    ? "(data->>'year')::integer = " + cmpYear + " AND (data->>'month')::integer = " + cmpMonthMax
-    : "(data->>'year')::integer = " + cmpYear + " AND (data->>'month')::integer >= " + cmpMonthMin + " AND (data->>'month')::integer <= " + cmpMonthMax
+  var curCond = cond(curYear,  curMonthMin,  curMonthMax)
+  var cmpCond = cond(cmpYear,  cmpMonthMin,  cmpMonthMax)
 
   var viewLabel, cmpLabel
   if (vt === 'MTD')      viewLabel = MONTHS[mo-1] + ' ' + yr + ' (MTD)'
@@ -51,7 +59,7 @@ function buildPeriodFilters(datasetId, tp) {
     cmpLabel = 'vs Q' + Math.ceil(cmpMonthMax/3) + ' ' + cmpYear + ' (QoQ)'
   }
 
-  return { curCond, cmpCond, curYear, cmpYear, viewLabel, cmpLabel }
+  return { curCond, cmpCond, curYear, cmpYear, viewLabel, cmpLabel, yf, mf }
 }
 
 // ── PRE-ANALYSIS: compute real variance for every KPI × dimension pair ────────
@@ -290,22 +298,22 @@ export async function POST(request) {
     })
   }
 
-  // SQL templates (unchanged from original)
+  // SQL templates — use resolved year/month field names (f.yf, f.mf)
   var tplSum = "SELECT SUM(CASE WHEN " + f.curCond + " THEN COALESCE((data->>'__FIELD__')::numeric,0) ELSE 0 END) AS current_value, SUM(CASE WHEN " + f.cmpCond + " THEN COALESCE((data->>'__FIELD__')::numeric,0) ELSE 0 END) AS comparison_value FROM dataset_rows WHERE dataset_id = " + datasetId
 
   var tplAvg = "SELECT AVG(CASE WHEN " + f.curCond + " THEN COALESCE((data->>'__FIELD__')::numeric,0) ELSE NULL END) AS current_value, AVG(CASE WHEN " + f.cmpCond + " THEN COALESCE((data->>'__FIELD__')::numeric,0) ELSE NULL END) AS comparison_value FROM dataset_rows WHERE dataset_id = " + datasetId
 
   var tplBar = "SELECT data->>'__DIM__' AS label, SUM(CASE WHEN " + f.curCond + " THEN COALESCE((data->>'__KPI__')::numeric,0) ELSE 0 END) AS current_value, SUM(CASE WHEN " + f.cmpCond + " THEN COALESCE((data->>'__KPI__')::numeric,0) ELSE 0 END) AS comparison_value FROM dataset_rows WHERE dataset_id = " + datasetId + " GROUP BY label ORDER BY current_value DESC LIMIT 10"
 
-  var tplLine = "SELECT CONCAT(data->>'year','-',LPAD(CAST((data->>'month')::integer AS TEXT),2,'0')) AS period, __AGG__(COALESCE((data->>'__KPI__')::numeric,0)) AS value FROM dataset_rows WHERE dataset_id = " + datasetId + " AND (data->>'year')::integer = " + f.curYear + " GROUP BY period ORDER BY period ASC"
+  var tplLine = "SELECT CONCAT(data->>'" + f.yf + "','-',LPAD(CAST((data->>'" + f.mf + "')::integer AS TEXT),2,'0')) AS period, __AGG__(COALESCE((data->>'__KPI__')::numeric,0)) AS value FROM dataset_rows WHERE dataset_id = " + datasetId + " AND (data->>'" + f.yf + "')::integer = " + f.curYear + " GROUP BY data->>'" + f.yf + "', data->>'" + f.mf + "' ORDER BY period ASC"
 
   var tplPie = "SELECT data->>'__DIM__' AS label, __AGG__(CASE WHEN " + f.curCond + " THEN COALESCE((data->>'__KPI__')::numeric,0) ELSE 0 END) AS value FROM dataset_rows WHERE dataset_id = " + datasetId + " GROUP BY label ORDER BY value DESC LIMIT 6"
 
   var tplScatter = "SELECT data->>'__DIM__' AS label, AVG(CASE WHEN " + f.curCond + " THEN COALESCE((data->>'__KPI1__')::numeric,0) ELSE NULL END) AS x_value, AVG(CASE WHEN " + f.curCond + " THEN COALESCE((data->>'__KPI2__')::numeric,0) ELSE NULL END) AS y_value FROM dataset_rows WHERE dataset_id = " + datasetId + " AND " + f.curCond + " GROUP BY label"
 
-  var tplArea = "SELECT CONCAT(data->>'year','-',LPAD(CAST((data->>'month')::integer AS TEXT),2,'0')) AS period, SUM(COALESCE((data->>'__KPI__')::numeric,0)) AS value FROM dataset_rows WHERE dataset_id = " + datasetId + " AND (data->>'year')::integer = " + f.curYear + " GROUP BY period ORDER BY period ASC"
+  var tplArea = "SELECT CONCAT(data->>'" + f.yf + "','-',LPAD(CAST((data->>'" + f.mf + "')::integer AS TEXT),2,'0')) AS period, SUM(COALESCE((data->>'__KPI__')::numeric,0)) AS value FROM dataset_rows WHERE dataset_id = " + datasetId + " AND (data->>'" + f.yf + "')::integer = " + f.curYear + " GROUP BY data->>'" + f.yf + "', data->>'" + f.mf + "' ORDER BY period ASC"
 
-  var systemMsg = 'You are a senior banking BI analyst and SQL engineer. Return only valid JSON. CRITICAL SQL RULE: current_value uses year=' + f.curYear + ' and comparison_value uses year=' + f.cmpYear + '. These are DIFFERENT years. Use CASE WHEN to split them. Never use IN. Never repeat the same condition in both columns.'
+  var systemMsg = 'You are a senior banking BI analyst and SQL engineer. Return only valid JSON. CRITICAL SQL RULE: current_value uses ' + f.yf + '=' + f.curYear + ' and comparison_value uses ' + f.yf + '=' + f.cmpYear + '. These are DIFFERENT years. Use CASE WHEN to split them. Never use IN. Never repeat the same condition in both columns. The year field is "' + f.yf + '" and the month field is "' + f.mf + '" — always use these exact field names in SQL conditions.'
 
   var promptLines = [
     '## ROLE',
@@ -322,6 +330,7 @@ export async function POST(request) {
     JSON.stringify(sampleData, null, 2),
     '',
     '## TIME PERIOD',
+    'Year field: "' + f.yf + '" | Month field: "' + f.mf + '" — use ONLY these field names in WHERE conditions.',
     'Current  : ' + f.viewLabel + '  |  WHERE: ' + f.curCond,
     'Comparison: ' + f.cmpLabel + '  |  WHERE: ' + f.cmpCond,
     'current year = ' + f.curYear + '  |  comparison year = ' + f.cmpYear,
