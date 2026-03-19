@@ -286,9 +286,9 @@ export default function Dashboard({ session }) {
               <XAxis dataKey={labelKey} tick={axStyle} angle={-30} textAnchor="end" interval={0} axisLine={false} tickLine={false} />
               <YAxis tick={axStyle} width={52} tickFormatter={fmt} axisLine={false} tickLine={false} />
               <Tooltip contentStyle={ttStyle} formatter={function(v, n) { return [fmt(v) + (result.unit ? ' ' + result.unit : ''), n] }} />
-              <Bar dataKey={curKey} name={periodInfo.viewLabel || 'Current'} fill={colorA} stroke={color} strokeWidth={0.5} radius={[2,2,0,0]} maxBarSize={hasComp ? 22 : 40} />
-              {hasComp && <Bar dataKey={cmpKey} name={periodInfo.cmpLabel || 'Prior'} fill={colorC} stroke={color} strokeWidth={0.5} radius={[2,2,0,0]} maxBarSize={22} />}
-              {hasComp && <Legend wrapperStyle={{ fontSize: 10, paddingTop: 6, fontFamily: "'Plus Jakarta Sans', system-ui", color: '#3D6080' }} />}
+              <Legend wrapperStyle={{ fontSize: 10, paddingTop: 6, fontFamily: "'Plus Jakarta Sans', system-ui", color: '#3D6080' }} />
+              {hasComp && <Bar dataKey={cmpKey} name={periodInfo.cmpLabel || 'Prior period'} fill={colorC} stroke={color} strokeWidth={0.5} radius={[2,2,0,0]} maxBarSize={22} />}
+              <Bar dataKey={curKey} name={periodInfo.viewLabel || 'Current period'} fill={colorA} stroke={color} strokeWidth={0.5} radius={[2,2,0,0]} maxBarSize={hasComp ? 22 : 40} />
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
