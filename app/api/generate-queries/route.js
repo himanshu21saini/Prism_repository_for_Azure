@@ -629,13 +629,44 @@ export async function POST(request) {
     console.log('=== Queries generated: ' + queries.length)
 
     var usage = json.usage || {}
+
+    // Build coverage data — summarises every decision made so CoveragePanel can explain them
+    var generatedKpiIds  = new Set(queries.filter(function(q) { return q.chart_type === 'kpi' }).map(function(q) { return q.id }))
+    var generatedChartSignatures = new Set(queries.filter(function(q) { return q.chart_type !== 'kpi' }).map(function(q) { return q.title }))
+
+    var allKpis = metaRows.filter(function(m) { return (m.type === 'kpi' || m.type === 'derived_kpi') && m.is_output !== 'N' })
+    var kpiCoverage = allKpis.map(function(m) {
+      var inTopKpis  = topKpis.concat(topDerived).some(function(k) { return k.field_name === m.field_name })
+      var hasKpiCard = queries.some(function(q) { return q.chart_type === 'kpi' && (q.id === m.field_name || (q.title || '').toLowerCase().includes((m.display_name || '').toLowerCase())) })
+      var reason = hasKpiCard ? 'shown'
+        : !inTopKpis         ? 'not_in_topkpis'
+        :                      'cap_hit'
+      return { field_name: m.field_name, display_name: m.display_name, type: m.type, business_priority: m.business_priority, accumulation_type: m.accumulation_type, aggregation: m.aggregation, reason }
+    })
+
+    var dimCoverage = preAnalysis.map(function(r) {
+      var cvNum = parseFloat(r.cv) || 0
+      var charted = queries.some(function(q) {
+        return q.chart_type !== 'kpi' && q.sql && q.sql.indexOf("'" + r.kpi_field + "'") >= 0 && q.sql.indexOf("'" + r.dim_field + "'") >= 0
+      })
+      return {
+        kpi_field: r.kpi_field, kpi_display: r.kpi_display,
+        dim_field:  r.dim_field,  dim_display:  r.dim_display,
+        cv: r.cv, cv_label: r.cv_label,
+        top_segment: r.top_segment, top_outlier: r.top_outlier,
+        charted,
+        reason: charted ? 'charted' : cvNum < 0.05 ? 'flat' : cvNum < 0.15 ? 'low_cv' : 'not_selected',
+      }
+    })
+
     return Response.json({
-      queries:     queries,
+      queries,
       model:       'gpt-4o',
       metadata:    metaRows,
-      timePeriod:  timePeriod,
+      timePeriod,
       periodInfo:  { viewLabel: f.viewLabel, cmpLabel: f.cmpLabel },
-      preAnalysis: preAnalysis,
+      preAnalysis,
+      coverageData: { kpiCoverage, dimCoverage, kpiCapUsed: kpiCoverage.filter(function(k) { return k.reason === 'shown' }).length, kpiCapMax: 8 },
       usage:       { prompt_tokens: usage.prompt_tokens || 0, completion_tokens: usage.completion_tokens || 0, model: 'gpt-4o' },
     })
   } catch (err) {
