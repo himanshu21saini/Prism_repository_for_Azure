@@ -692,7 +692,7 @@ function QueryInspector({ queries, periodInfo, trendSQLs }) {
     </div>
   )
 }
-
+ 
 function CopyButton({ text }) {
   var [copied, setCopied] = useState(false)
   return (
