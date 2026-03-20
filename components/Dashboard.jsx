@@ -328,20 +328,13 @@ export default function Dashboard({ session }) {
     // line and area chart types are rendered by TrendExplorer above the chart grid
 
     if (ct === 'pie' || ct === 'donut') {
-      var innerR = ct === 'donut' ? 48 : 0
+      var innerR = ct === 'donut' ? 55 : 0
       return (
         <ChartCard key={result.id} title={result.title} insight={insight} index={idx} onSimulate={onSimulate}>
-          <ResponsiveContainer width="100%" height={220}>
+          <ResponsiveContainer width="100%" height={260}>
             <PieChart>
-              <Pie
-                data={data} cx="50%" cy="44%"
-                innerRadius={innerR} outerRadius={82}
-                dataKey={valueKey} nameKey={labelKey}
-                paddingAngle={ct === 'donut' ? 2 : 1} strokeWidth={0}
-                label={function(entry) {
-                  var pct = (entry.percent * 100).toFixed(1)
-                  return pct + '%'
-                }}
+              <Pie data={data} cx="50%" cy="46%" innerRadius={innerR} outerRadius={95} dataKey={valueKey} nameKey={labelKey} paddingAngle={ct === 'donut' ? 2 : 1} strokeWidth={0}
+                label={function(entry) { return (entry.percent * 100).toFixed(1) + '%' }}
                 labelLine={{ stroke: 'var(--text-tertiary)', strokeWidth: 0.5 }}
               >
                 {data.map(function(entry, i) { return <Cell key={i} fill={PA[i % PA.length]} stroke={P[i % P.length]} strokeWidth={0.5} /> })}
