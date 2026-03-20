@@ -253,17 +253,20 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
     kpiOptions.forEach(function(meta) {
       var field = meta.field_name
       var acc   = meta.accumulation_type || 'cumulative'
+      // Detect count distinct from either calculation_logic OR aggregation column
+      var calcLogic = meta.calculation_logic || meta.aggregation || ''
+      var deps      = meta.dependencies || ''
       fetch('/api/fetch-trend', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ datasetId: datasetId, fieldName: field, accumulationType: acc, yearsBack: 3, yearField: yf, monthField: mf, calculationLogic: meta.calculation_logic || '', dependencies: meta.dependencies || '' }),
+        body: JSON.stringify({ datasetId: datasetId, fieldName: field, accumulationType: acc, yearsBack: 3, yearField: yf, monthField: mf, calculationLogic: calcLogic, dependencies: deps }),
       })
         .then(function(r) { return r.json() })
         .then(function(j) {
           if (j.error || !j.data) return
           var agg = j.agg || (acc === 'point_in_time' ? 'AVG' : 'SUM')
-          var isCD = /distinct/i.test(meta.calculation_logic || '')
-          var distField = isCD ? (meta.dependencies || '') : null
+          var isCD = /distinct/i.test(calcLogic)
+          var distField = isCD ? (deps || '') : null
           var sql = buildTrendSQL(datasetId, field, agg, yf, mf, distField)
           setCache(function(p) {
             if (p[cacheKey(field)]) return p
@@ -292,13 +295,13 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
       fetch('/api/fetch-trend', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ datasetId: datasetId, fieldName: selectedField, accumulationType: acc, yearsBack: 3, yearField: yf, monthField: mf, calculationLogic: (selectedMeta && selectedMeta.calculation_logic) || '', dependencies: (selectedMeta && selectedMeta.dependencies) || '' }),
+        body: JSON.stringify({ datasetId: datasetId, fieldName: selectedField, accumulationType: acc, yearsBack: 3, yearField: yf, monthField: mf, calculationLogic: (selectedMeta && (selectedMeta.calculation_logic || selectedMeta.aggregation)) || '', dependencies: (selectedMeta && selectedMeta.dependencies) || '' }),
       })
         .then(function(r) { return r.json() })
         .then(function(j) {
           if (j.error) throw new Error(j.error)
           var agg = j.agg || (acc === 'point_in_time' ? 'AVG' : 'SUM')
-          var isCD2 = /distinct/i.test((selectedMeta && selectedMeta.calculation_logic) || '')
+          var isCD2 = /distinct/i.test((selectedMeta && (selectedMeta.calculation_logic || selectedMeta.aggregation)) || '')
           var df2   = isCD2 ? ((selectedMeta && selectedMeta.dependencies) || '') : null
           if (onTrendData) onTrendData(selectedField, j.data || [], selectedMeta)
           setCache(function(p) { var n = Object.assign({}, p); n[cacheKey(selectedField)] = { data: j.data || [], forecast: null, sql: buildTrendSQL(datasetId, selectedField, agg, yf, mf, df2),
@@ -355,14 +358,14 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
     fetch('/api/fetch-trend', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ datasetId: datasetId, fieldName: selectedField, accumulationType: acc, yearsBack: 3, yearField: yf, monthField: mf, calculationLogic: (selectedMeta && selectedMeta.calculation_logic) || '', dependencies: (selectedMeta && selectedMeta.dependencies) || '' }),
+      body: JSON.stringify({ datasetId: datasetId, fieldName: selectedField, accumulationType: acc, yearsBack: 3, yearField: yf, monthField: mf, calculationLogic: (selectedMeta && (selectedMeta.calculation_logic || selectedMeta.aggregation)) || '', dependencies: (selectedMeta && selectedMeta.dependencies) || '' }),
     })
       .then(function(r) { return r.json() })
       .then(function(j) {
         if (j.error) throw new Error(j.error)
         var trendData = j.data || []
         var agg = j.agg || (acc === 'point_in_time' ? 'AVG' : 'SUM')
-        var isCD3 = /distinct/i.test((selectedMeta && selectedMeta.calculation_logic) || '')
+        var isCD3 = /distinct/i.test((selectedMeta && (selectedMeta.calculation_logic || selectedMeta.aggregation)) || '')
         var df3   = isCD3 ? ((selectedMeta && selectedMeta.dependencies) || '') : null
         if (onTrendData) onTrendData(selectedField, trendData, selectedMeta)
         if (trendData.length < 3) {
