@@ -250,7 +250,7 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
       fetch('/api/fetch-trend', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ datasetId: datasetId, fieldName: field, accumulationType: acc, yearsBack: 3, yearField: yf, monthField: mf }),
+        body: JSON.stringify({ datasetId: datasetId, fieldName: field, accumulationType: acc, yearsBack: 3, yearField: yf, monthField: mf, calculationLogic: meta.calculation_logic || '', dependencies: meta.dependencies || '' }),
       })
         .then(function(r) { return r.json() })
         .then(function(j) {
@@ -283,7 +283,7 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
       fetch('/api/fetch-trend', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ datasetId: datasetId, fieldName: selectedField, accumulationType: acc, yearsBack: 3, yearField: yf, monthField: mf }),
+        body: JSON.stringify({ datasetId: datasetId, fieldName: selectedField, accumulationType: acc, yearsBack: 3, yearField: yf, monthField: mf, calculationLogic: (selectedMeta && selectedMeta.calculation_logic) || '', dependencies: (selectedMeta && selectedMeta.dependencies) || '' }),
       })
         .then(function(r) { return r.json() })
         .then(function(j) {
@@ -344,7 +344,7 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
     fetch('/api/fetch-trend', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ datasetId: datasetId, fieldName: selectedField, accumulationType: acc, yearsBack: 3, yearField: yf, monthField: mf }),
+      body: JSON.stringify({ datasetId: datasetId, fieldName: selectedField, accumulationType: acc, yearsBack: 3, yearField: yf, monthField: mf, calculationLogic: (selectedMeta && selectedMeta.calculation_logic) || '', dependencies: (selectedMeta && selectedMeta.dependencies) || '' }),
     })
       .then(function(r) { return r.json() })
       .then(function(j) {
@@ -391,7 +391,13 @@ export default function TrendExplorer({ metadata, datasetId, timePeriod, onSimul
   var forecast  = (cached && cached.forecast && cached.forecast !== false) ? cached.forecast : null
   var cachedSQL = cached && cached.sql
   var accType   = (selectedMeta && selectedMeta.accumulation_type) || 'cumulative'
-  var fiscalCtx = { fiscal: cached && cached.fiscal, fiscalStartMonth: cached && cached.fiscalStartMonth,  }
+
+  // Derive fiscal directly from the yearField — don't rely on cached.fiscal
+  // which may not be set if the pre-fetch hasn't completed yet
+  var fiscalCtx = {
+    fiscal:           /fiscal/i.test(yf),
+    fiscalStartMonth: (cached && cached.fiscalStartMonth) || 11,
+  }
 
   var curYear   = timePeriod ? parseInt(timePeriod.year) : new Date().getFullYear()
   var unit      = (selectedMeta && selectedMeta.unit) || ''
