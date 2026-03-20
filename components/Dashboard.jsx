@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import {
-  BarChart, Bar, AreaChart, Area,
+  BarChart, Bar, AreaChart, Area, LineChart, Line,
   PieChart, Pie, Cell, ScatterChart, Scatter,
   XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LabelList,
 } from 'recharts'
@@ -153,10 +153,11 @@ export default function Dashboard({ session }) {
   var allQueries   = session.queries      || []
   var prefs        = session.preferences  || {}
 
-  var kpiResults   = queryResults.filter(function(r) { return r.chart_type === 'kpi' && !r.error && r.data && r.data.length })
-  var trendResults = queryResults.filter(function(r) { return (r.chart_type === 'line' || r.chart_type === 'area') && !r.error && r.data && r.data.length })
-  var chartResults = queryResults.filter(function(r) { return r.chart_type !== 'kpi' && r.chart_type !== 'line' && r.chart_type !== 'area' && !r.error && r.data && r.data.length })
-  var failed       = queryResults.filter(function(r) { return !!r.error })
+  var kpiResults     = queryResults.filter(function(r) { return r.chart_type === 'kpi' && !r.error && r.data && r.data.length })
+  var trendResults   = queryResults.filter(function(r) { return (r.chart_type === 'line' || r.chart_type === 'area') && !r.error && r.data && r.data.length })
+  var drillResults   = queryResults.filter(function(r) { return r.chart_type === 'drilldown' && !r.error && r.data && r.data.length })
+  var chartResults   = queryResults.filter(function(r) { return r.chart_type !== 'kpi' && r.chart_type !== 'line' && r.chart_type !== 'area' && r.chart_type !== 'drilldown' && !r.error && r.data && r.data.length })
+  var failed         = queryResults.filter(function(r) { return !!r.error })
 
   // Build enriched payload for LLM calls.
   // Converts each cached trend series into BOTH:
@@ -568,6 +569,11 @@ export default function Dashboard({ session }) {
         />
       )}
 
+      {/* ── Drill-Down Panels (intent_generated heatmap queries) ─────── */}
+      {drillResults.map(function(result, idx) {
+        return <DrillDownChart key={result.id} result={result} idx={idx} periodInfo={periodInfo} />
+      })}
+
       {/* ── Charts ────────────────────────────────────────────────────── */}
       {chartResults.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
@@ -700,5 +706,256 @@ function CopyButton({ text }) {
       style={{ marginTop: 8, fontSize: 10, padding: '3px 9px', border: '1px solid var(--border)', borderRadius: 2, background: copied ? 'var(--accent-dim)' : 'transparent', color: copied ? 'var(--text-accent)' : 'var(--text-tertiary)', cursor: 'pointer', fontFamily: 'var(--font-mono)', letterSpacing: '0.04em', transition: 'all var(--transition)' }}>
       {copied ? '✓ Copied' : 'Copy SQL'}
     </button>
+  )
+}
+
+// ── DrillDownChart ────────────────────────────────────────────────────────────
+// Two-level interactive panel for intent heatmap queries.
+// Level 1: horizontal bar chart — one bar per entity (branch), sorted by avg score.
+// Level 2: click a branch → inline line chart showing its score across all intervals.
+// Data comes from a single query that has label (branch), slot (interval), current_value.
+
+function DrillDownChart({ result, idx, periodInfo }) {
+  var [selected, setSelected] = useState(null)
+
+  var raw         = result.data || []
+  var labelKey    = result.label_key    || 'label'
+  var slotKey     = result.slot_key     || 'slot'
+  var slotSortKey = result.slot_sort_key || slotKey
+  var valueKey    = result.current_key  || 'current_value'
+  var entityDisp  = result.entity_display || 'Branch'
+  var slotDisp    = result.slot_display   || 'Time Slot'
+  var metricDisp  = result.metric_display || 'Score'
+
+  // Derive branch-level aggregates for Level 1
+  var branchMap = {}
+  raw.forEach(function(row) {
+    var branch = row[labelKey]
+    if (!branch) return
+    if (!branchMap[branch]) branchMap[branch] = { label: branch, total: 0, count: 0 }
+    branchMap[branch].total += parseFloat(row[valueKey]) || 0
+    branchMap[branch].count += 1
+  })
+  var branches = Object.values(branchMap)
+    .map(function(b) { return { label: b.label, avg: b.count ? b.total / b.count : 0 } })
+    .sort(function(a, b) { return b.avg - a.avg })
+
+  // Derive interval rows for the selected branch
+  var slotRows = []
+  if (selected) {
+    slotRows = raw
+      .filter(function(r) { return r[labelKey] === selected })
+      .map(function(r) { return { slot: r[slotKey], sort: r[slotSortKey], value: parseFloat(r[valueKey]) || 0 } })
+      .sort(function(a, b) {
+        var na = parseInt(a.sort); var nb = parseInt(b.sort)
+        if (!isNaN(na) && !isNaN(nb)) return na - nb
+        return String(a.slot).localeCompare(String(b.slot))
+      })
+  }
+
+  // Score → colour mapping (for bfi_2_score range 6-16)
+  function scoreColor(v) {
+    if (v >= 14) return '#E05555'      // red — Ultra High
+    if (v >= 12) return '#F0A030'      // amber — High
+    if (v >= 10) return '#00C8F0'      // teal — Medium
+    return '#3D6080'                   // muted — Low
+  }
+
+  var maxAvg = branches.length ? branches[0].avg : 1
+
+  var ttStyle = {
+    background: '#0D1930', border: '1px solid rgba(0,200,240,0.2)',
+    borderRadius: 8, fontSize: 11, color: '#FFFFFF', padding: '8px 12px',
+    fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
+  }
+  var axStyle = { fontSize: 10, fill: '#3D6080', fontFamily: "'JetBrains Mono', monospace" }
+
+  function fmt(v) {
+    var n = parseFloat(v); if (isNaN(n)) return '—'
+    return n.toFixed(1)
+  }
+
+  return (
+    <div className={'fade-up d' + Math.min(idx + 2, 6)} style={{
+      background: 'linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%)',
+      border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)',
+      marginBottom: 12, overflow: 'hidden',
+      transition: 'border-color var(--transition)',
+    }}>
+      {/* Top accent */}
+      <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, var(--accent), transparent)', opacity: 0.25 }} />
+
+      {/* Header */}
+      <div style={{ padding: '14px 18px 10px', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+        <div style={{ flex: 1 }}>
+          <p style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.12em', fontFamily: 'var(--font-body)', marginBottom: 2 }}>
+            {result.title}
+          </p>
+          <p style={{ fontSize: 11, color: 'rgba(56,180,220,0.5)', fontFamily: 'var(--font-body)' }}>
+            {selected
+              ? entityDisp + ' selected: ' + selected + ' — showing ' + slotDisp.toLowerCase() + ' breakdown'
+              : 'Click any ' + entityDisp.toLowerCase() + ' to drill into its ' + slotDisp.toLowerCase() + ' pattern'
+            }
+          </p>
+        </div>
+        {selected && (
+          <button
+            onClick={function() { setSelected(null) }}
+            style={{
+              fontSize: 10, padding: '4px 10px', cursor: 'pointer',
+              background: 'var(--accent-dim)', border: '1px solid var(--accent-border)',
+              borderRadius: 'var(--radius-sm)', color: 'var(--text-accent)',
+              fontFamily: 'var(--font-mono)', letterSpacing: '0.06em',
+              flexShrink: 0,
+            }}
+          >
+            ← All {entityDisp}s
+          </button>
+        )}
+      </div>
+
+      {/* Level 1 — Branch ranking (always visible, selected branch highlighted) */}
+      <div style={{ padding: '0 18px 14px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          {branches.map(function(b) {
+            var isSelected = selected === b.label
+            var barPct     = maxAvg > 0 ? (b.avg / maxAvg) * 100 : 0
+            var color      = scoreColor(b.avg)
+            return (
+              <div
+                key={b.label}
+                onClick={function() { setSelected(isSelected ? null : b.label) }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '6px 10px', borderRadius: 'var(--radius-sm)',
+                  cursor: 'pointer',
+                  background: isSelected ? 'rgba(0,200,240,0.06)' : 'transparent',
+                  border: '1px solid ' + (isSelected ? 'var(--accent-border)' : 'transparent'),
+                  transition: 'all var(--transition)',
+                }}
+                onMouseEnter={function(e) { if (!isSelected) e.currentTarget.style.background = 'rgba(255,255,255,0.03)' }}
+                onMouseLeave={function(e) { if (!isSelected) e.currentTarget.style.background = 'transparent' }}
+              >
+                {/* Branch label */}
+                <span style={{
+                  fontSize: 11, color: isSelected ? 'var(--text-accent)' : 'var(--text-secondary)',
+                  fontFamily: 'var(--font-body)', width: 80, flexShrink: 0,
+                  fontWeight: isSelected ? 600 : 400,
+                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                }}>
+                  {b.label}
+                </span>
+
+                {/* Bar */}
+                <div style={{ flex: 1, height: 8, background: 'var(--surface-3)', borderRadius: 4, overflow: 'hidden' }}>
+                  <div style={{
+                    width: barPct + '%', height: '100%',
+                    background: color,
+                    borderRadius: 4,
+                    opacity: selected && !isSelected ? 0.35 : 0.85,
+                    transition: 'width 0.4s ease, opacity var(--transition)',
+                  }} />
+                </div>
+
+                {/* Score */}
+                <span style={{
+                  fontSize: 11, fontFamily: 'var(--font-mono)',
+                  color: color, width: 36, textAlign: 'right', flexShrink: 0,
+                  fontWeight: 600,
+                }}>
+                  {fmt(b.avg)}
+                </span>
+
+                {/* Drill indicator */}
+                <span style={{
+                  fontSize: 11, color: isSelected ? 'var(--text-accent)' : 'var(--text-tertiary)',
+                  flexShrink: 0,
+                }}>
+                  {isSelected ? '▾' : '▸'}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Level 2 — Interval breakdown (shown below when a branch is selected) */}
+      {selected && slotRows.length > 0 && (
+        <div style={{
+          borderTop: '1px solid var(--border)',
+          padding: '14px 18px 16px',
+          background: 'rgba(0,200,240,0.02)',
+        }}>
+          <p style={{
+            fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.14em',
+            color: 'var(--text-accent)', fontFamily: 'var(--font-body)', marginBottom: 12,
+          }}>
+            {selected} — {metricDisp} by {slotDisp}
+          </p>
+
+          <ResponsiveContainer width="100%" height={180}>
+            <LineChart data={slotRows} margin={{ top: 4, right: 8, left: 0, bottom: 40 }}>
+              <CartesianGrid strokeDasharray="1 4" stroke="rgba(56,140,255,0.08)" vertical={false} />
+              <XAxis
+                dataKey="slot"
+                tick={axStyle}
+                angle={-40}
+                textAnchor="end"
+                interval={Math.max(0, Math.floor(slotRows.length / 8) - 1)}
+                axisLine={false}
+                tickLine={false}
+              />
+              <YAxis tick={axStyle} width={40} tickFormatter={fmt} axisLine={false} tickLine={false} />
+              <Tooltip
+                contentStyle={ttStyle}
+                formatter={function(v) { return [fmt(v), metricDisp] }}
+                labelFormatter={function(l) { return slotDisp + ': ' + l }}
+              />
+              <Line
+                type="monotone"
+                dataKey="value"
+                name={metricDisp}
+                stroke="var(--accent)"
+                strokeWidth={1.5}
+                dot={function(props) {
+                  var cx = props.cx; var cy = props.cy; var val = props.payload.value
+                  return (
+                    <circle
+                      key={props.key || cx + '-' + cy}
+                      cx={cx} cy={cy} r={3}
+                      fill={scoreColor(val)}
+                      stroke="none"
+                    />
+                  )
+                }}
+                activeDot={{ r: 5, fill: 'var(--accent)' }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+
+          {/* Summary stats row */}
+          <div style={{ display: 'flex', gap: 16, marginTop: 6, flexWrap: 'wrap' }}>
+            {(function() {
+              var vals = slotRows.map(function(r) { return r.value })
+              var avg  = vals.reduce(function(a,b){return a+b},0) / (vals.length||1)
+              var peak = slotRows.reduce(function(a,b){return b.value>a.value?b:a}, slotRows[0])
+              var low  = slotRows.reduce(function(a,b){return b.value<a.value?b:a}, slotRows[0])
+              return [
+                { label: 'Avg', val: fmt(avg), color: 'var(--text-secondary)' },
+                { label: 'Peak slot', val: peak ? peak.slot + ' (' + fmt(peak.value) + ')' : '—', color: '#E05555' },
+                { label: 'Lowest slot', val: low  ? low.slot  + ' (' + fmt(low.value)  + ')' : '—', color: '#10C48A' },
+              ].map(function(s) {
+                return (
+                  <div key={s.label} style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+                    <span style={{ fontSize: 9, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{s.label}</span>
+                    <span style={{ fontSize: 11, color: s.color, fontFamily: 'var(--font-mono)', fontWeight: 500 }}>{s.val}</span>
+                  </div>
+                )
+              })
+            })()}
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
