@@ -893,16 +893,30 @@ export function SetupScreenProd({ onReady }) {
   var inputStyle = { ...selectStyle, cursor: 'text', marginBottom: 8 }
 
   return (
-    <div style={{ minHeight: 'calc(100vh - 54px)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '32px 24px 60px' }}>
-      <div style={{ width: '100%', maxWidth: 1200, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'start' }}>
+    <div style={{ minHeight: 'calc(100vh - 54px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', padding: '36px 24px 60px' }}>
+
+      {/* Hero — matches dev mode style */}
+      <div style={{ textAlign: 'center', maxWidth: 580, marginBottom: 36 }}>
+        <p style={{ fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'var(--text-accent)', marginBottom: 14, fontFamily: 'var(--font-body)', fontWeight: 500 }}>
+          {APP_NAME}
+        </p>
+        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 36, fontWeight: 700, letterSpacing: '-0.01em', lineHeight: 1.15, color: 'var(--text-primary)', marginBottom: 12 }}>
+          Configure Intelligence
+        </h1>
+        <p style={{ color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.6, fontFamily: 'var(--font-body)' }}>
+          Select your data sources, time horizon and context. The AI agent composes your intelligence.
+        </p>
+      </div>
+
+      <div style={{ width: '100%', maxWidth: 1200, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'stretch' }}>
 
         {/* ── LEFT CARD: sections 1 + 2 ─────────────────────────────── */}
-        <div style={{ background: 'linear-gradient(160deg, var(--surface) 0%, var(--surface-2) 100%)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '28px 28px', backdropFilter: 'blur(8px)', position: 'relative', overflow: 'hidden' }}>
+        <div style={{ background: 'linear-gradient(160deg, var(--surface) 0%, var(--surface-2) 100%)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '28px 28px', backdropFilter: 'blur(8px)', position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg, transparent, var(--accent), transparent)', opacity: 0.25 }} />
 
           {/* Section 1: Data */}
           <ProdSectionCard n="1" title="Data">
-            {/* Dataset */}
+            <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginBottom: 12 }}>Main data file — .xlsx, .xls or .csv</p>
             <p style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.09em', marginBottom: 6, fontFamily: 'var(--font-body)' }}>Dataset</p>
             {!loadingLists && datasets.length > 0 && (
               <div style={{ display: 'flex', gap: 5, marginBottom: 8 }}>
@@ -933,7 +947,7 @@ export function SetupScreenProd({ onReady }) {
 
           {/* Section 2: Time Period */}
           <ProdSectionCard n="2" title="Time period">
-            <div style={{ display: 'flex', gap: 16, marginBottom: 14 }}>
+            <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginBottom: 12 }}>Set the as-of date and comparison type for all queries</p>
               <div>
                 <p style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6, fontFamily: 'var(--font-body)' }}>View</p>
                 <div style={{ display: 'flex', gap: 5 }}>
@@ -979,12 +993,12 @@ export function SetupScreenProd({ onReady }) {
         </div>
 
         {/* ── RIGHT CARD: sections 3 + 4 + build ───────────────────── */}
-        <div style={{ background: 'linear-gradient(160deg, var(--surface) 0%, var(--surface-2) 100%)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '28px 28px', backdropFilter: 'blur(8px)', position: 'relative', overflow: 'hidden' }}>
+        <div style={{ background: 'linear-gradient(160deg, var(--surface) 0%, var(--surface-2) 100%)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '28px 28px', backdropFilter: 'blur(8px)', position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg, transparent, var(--accent), transparent)', opacity: 0.25 }} />
 
           {/* Section 3: Context */}
           <ProdSectionCard n="3" title={<>Your context <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', marginLeft: 6, verticalAlign: 'middle' }}>optional</span></>}>
-            <textarea
+            <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginBottom: 10 }}>Describe your role or focus — the LLM will extract <span style={{ color: 'var(--text-accent)' }}>dimension filters</span> and <span style={{ color: 'var(--text-accent)' }}>KPI focus</span>. You'll confirm before building.</p>
               ref={contextRef}
               defaultValue=""
               placeholder={'e.g. "I am head of West Region and my focus is Revenue"'}
@@ -992,10 +1006,6 @@ export function SetupScreenProd({ onReady }) {
               onFocus={function(e){e.target.style.borderColor='var(--accent-border)'}}
               onBlur={function(e){e.target.style.borderColor='var(--border)'}}
             />
-            <p style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 6, fontFamily: 'var(--font-body)', lineHeight: 1.5 }}>
-              LLM will extract <span style={{ color: 'var(--text-accent)' }}>filters</span> and <span style={{ color: 'var(--text-accent)' }}>KPI focus</span> from your description. You'll confirm before building.
-            </p>
-
             {/* Confirmation block */}
             {showConfirm && extracted && (
               <div style={{ background: 'var(--surface)', border: '1px solid var(--accent-border)', borderRadius: 'var(--radius-md)', padding: '10px 12px', marginTop: 10 }}>
@@ -1023,8 +1033,8 @@ export function SetupScreenProd({ onReady }) {
 
           {/* Section 4: Dashboard panels */}
           <ProdSectionCard n="4" title="Dashboard panels">
+            <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginBottom: 10 }}>Choose which panels appear on your dashboard</p>
             {[
-              { key: 'decisions',     label: 'Generate Decisions',  desc: 'AI-ranked actions and health scores' },
               { key: 'summary',       label: 'Generate Summary',    desc: 'Executive narrative report' },
               { key: 'forecast',      label: 'Trend Explorer',      desc: 'Interactive KPI trends and forecasts' },
               { key: 'queryInspector',label: 'Query Inspector',     desc: 'View and copy all generated SQL' },
@@ -1051,6 +1061,9 @@ export function SetupScreenProd({ onReady }) {
           {error && (
             <p style={{ fontSize: 11, color: 'var(--red-text)', background: 'var(--red-light)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', marginBottom: 12, border: '1px solid rgba(224,85,85,0.2)' }}>{error}</p>
           )}
+
+          {/* Spacer pushes button to bottom */}
+          <div style={{ flex: 1 }} />
 
           {/* Generate button */}
           <button
