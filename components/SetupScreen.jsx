@@ -209,6 +209,7 @@ export default function SetupScreen({ onReady }) {
         metadata: gqJson.metadata, timePeriod, periodInfo: gqJson.periodInfo,
         initialUsage: gqJson.usage || null,
         userContext: userContext || null,
+        coverageData: gqJson.coverageData || null,
       })
     } catch (err) { setError(err.message); setWorking(false); setProgress('') }
   }
