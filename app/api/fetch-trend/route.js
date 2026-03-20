@@ -10,6 +10,8 @@ export async function POST(request) {
   var datasetId        = body.datasetId
   var fieldName        = body.fieldName
   var accumulationType = body.accumulationType || 'cumulative'
+  var calculationLogic = body.calculationLogic || ''
+  var dependencies     = body.dependencies     || ''
   var yearsBack        = body.yearsBack || 3
   var yf               = body.yearField  || 'year'
   var mf               = body.monthField || 'month'
@@ -19,7 +21,10 @@ export async function POST(request) {
     return Response.json({ error: 'datasetId and fieldName are required.' }, { status: 400 })
   }
 
-  var agg = accumulationType === 'point_in_time' ? 'AVG' : 'SUM'
+  // Detect count distinct — from calculation_logic or accumulation_type hint
+  var isCountDistinct = /distinct/i.test(calculationLogic) || /count_distinct/i.test(accumulationType)
+  var distField       = isCountDistinct ? (dependencies || fieldName) : null
+  var agg             = accumulationType === 'point_in_time' ? 'AVG' : 'SUM'
 
   var yearRangeSQL = [
     'SELECT',
@@ -44,10 +49,14 @@ export async function POST(request) {
     maxYear - yearsBack
   )
 
+  var valueExpr = isCountDistinct
+    ? "COUNT(DISTINCT data->>'" + distField + "')"
+    : agg + "(COALESCE((data->>'" + fieldName + "')::numeric, 0))"
+
   var trendSQL = [
     'SELECT',
     "  CONCAT(data->>'" + yf + "', '-', LPAD(CAST((data->>'" + mf + "')::integer AS TEXT), 2, '0')) AS period,",
-    '  ' + agg + "(COALESCE((data->>'" + fieldName + "')::numeric, 0)) AS value",
+    '  ' + valueExpr + ' AS value',
     'FROM dataset_rows',
     'WHERE dataset_id = ' + datasetId,
     "  AND (data->>'" + yf + "')::integer >= " + minYear,
