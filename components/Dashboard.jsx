@@ -330,30 +330,45 @@ export default function Dashboard({ session }) {
     if (ct === 'pie' || ct === 'donut') {
     if (ct === 'pie' || ct === 'donut') {
       var innerR = ct === 'donut' ? 55 : 0
-      // Auto-detect value key and force all values to numeric
+
+      // Always auto-detect keys from the actual data row — never trust LLM key hints for pie
+      var pieLabelKey = labelKey
       var pieValueKey = valueKey
       if (data.length > 0) {
         var firstRow = data[0]
-        if (firstRow[valueKey] === undefined) {
-          pieValueKey = firstRow['value'] !== undefined ? 'value'
-            : firstRow['current_value'] !== undefined ? 'current_value'
-            : Object.keys(firstRow).find(function(k) { return k !== labelKey && !isNaN(parseFloat(firstRow[k])) }) || valueKey
+        var keys = Object.keys(firstRow)
+
+        // Find label key — first string-valued column
+        if (!firstRow[pieLabelKey]) {
+          pieLabelKey = keys.find(function(k) {
+            var v = firstRow[k]
+            return typeof v === 'string' && v.length > 0 && isNaN(parseFloat(v))
+          }) || keys[0]
+        }
+
+        // Find value key — first numeric-valued column that isn't the label
+        if (firstRow[pieValueKey] === undefined || firstRow[pieValueKey] === null) {
+          pieValueKey = keys.find(function(k) {
+            return k !== pieLabelKey && !isNaN(parseFloat(firstRow[k]))
+          }) || keys[1]
         }
       }
-      // Postgres returns numerics as strings — force to float and filter zeros
+
+      // Force all values to float, drop zero/null rows
       var pieData = data
         .map(function(r) {
           var row = Object.assign({}, r)
           row[pieValueKey] = parseFloat(row[pieValueKey]) || 0
           return row
         })
-        .filter(function(r) { return r[pieValueKey] > 0 && r[labelKey] })
+        .filter(function(r) { return r[pieValueKey] > 0 && r[pieLabelKey] })
+
       return (
         <ChartCard key={result.id} title={result.title} insight={insight} index={idx} onSimulate={onSimulate}>
           <ResponsiveContainer width="100%" height={280}>
             <PieChart margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
               <Pie data={pieData} cx="50%" cy="45%" innerRadius={innerR} outerRadius={100}
-                dataKey={pieValueKey} nameKey={labelKey}
+                dataKey={pieValueKey} nameKey={pieLabelKey}
                 paddingAngle={ct === 'donut' ? 2 : 1} strokeWidth={0}
                 label={function(entry) { return (entry.percent * 100).toFixed(1) + '%' }}
                 labelLine={{ stroke: 'var(--text-tertiary)', strokeWidth: 0.5 }}
