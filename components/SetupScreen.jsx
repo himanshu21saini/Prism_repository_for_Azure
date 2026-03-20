@@ -948,6 +948,7 @@ export function SetupScreenProd({ onReady }) {
           {/* Section 2: Time Period */}
           <ProdSectionCard n="2" title="Time period">
             <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginBottom: 12 }}>Set the as-of date and comparison type for all queries</p>
+            <div style={{ display: 'flex', gap: 16, marginBottom: 14 }}>
               <div>
                 <p style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6, fontFamily: 'var(--font-body)' }}>View</p>
                 <div style={{ display: 'flex', gap: 5 }}>
