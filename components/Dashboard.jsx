@@ -328,7 +328,6 @@ export default function Dashboard({ session }) {
     // line and area chart types are rendered by TrendExplorer above the chart grid
 
     if (ct === 'pie' || ct === 'donut') {
-    if (ct === 'pie' || ct === 'donut') {
       var innerR = ct === 'donut' ? 55 : 0
 
       // Always auto-detect keys from the actual data row — never trust LLM key hints for pie
@@ -641,5 +640,4 @@ function CopyButton({ text }) {
       {copied ? '✓ Copied' : 'Copy SQL'}
     </button>
   )
-}
 }
