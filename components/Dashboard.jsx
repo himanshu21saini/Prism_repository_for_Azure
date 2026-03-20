@@ -12,6 +12,7 @@ import DecisionPanel from './DecisionPanel'
 import WhatIfDrawer from './WhatIfDrawer'
 import TrendExplorer from './TrendExplorer'
 import TokenMeter from './TokenMeter'
+import CoveragePanel from './CoveragePanel'
 
 // ESSEX-inspired teal/blue palette
 var P  = ['#00C8F0','#2B7FE3','#00B4A0','#7B8FF0','#F0A030','#9B7FE3','#10C48A','#E05555']
@@ -571,6 +572,7 @@ export default function Dashboard({ session }) {
 
       {/* ── Query Inspector ──────────────────────────────────────── */}
       <QueryInspector queries={allQueries} periodInfo={periodInfo} trendSQLs={trendSQLCache} />
+      <CoveragePanel coverageData={session.coverageData} />
 
       {/* ── Decision Intelligence ─────────────────────────────────── */}
       {decisionState !== 'idle' && <DecisionPanel result={decisionResult} state={decisionState} error={decisionError} />}
