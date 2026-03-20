@@ -15,8 +15,17 @@ var COMPARISON_OPTIONS = {
 // Pairs are matched by naming convention: Report_Year↔Report_Month, Fiscal_Year↔Fiscal_Month etc.
 // Falls back to any single year_month field used for both if no pair is found.
 function detectPeriodPairs(ymRows) {
-  var yearFields  = ymRows.filter(function(r) { return /year/i.test(r.field_name) && !/month|qtr|quarter/i.test(r.field_name) })
-  var monthFields = ymRows.filter(function(r) { return /month/i.test(r.field_name) && !/year/i.test(r.field_name) })
+  // Exclude Current_Fiscal_Year / Current_Fiscal_Month — these are 0/1 flag fields not actual period values
+  var yearFields  = ymRows.filter(function(r) {
+    return /year/i.test(r.field_name)
+      && !/month|qtr|quarter/i.test(r.field_name)
+      && !/^current_/i.test(r.field_name)
+  })
+  var monthFields = ymRows.filter(function(r) {
+    return /month/i.test(r.field_name)
+      && !/year/i.test(r.field_name)
+      && !/^current_/i.test(r.field_name)
+  })
 
   var pairs = []
 
@@ -1037,6 +1046,7 @@ export function SetupScreenProd({ onReady }) {
           <ProdSectionCard n="4" title="Dashboard panels">
             <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginBottom: 10 }}>Choose which panels appear on your dashboard</p>
             {[
+              { key: 'decisions',     label: 'Generate Decisions',  desc: 'AI-ranked actions and health scores' },
               { key: 'summary',       label: 'Generate Summary',    desc: 'Executive narrative report' },
               { key: 'forecast',      label: 'Trend Explorer',      desc: 'Interactive KPI trends and forecasts' },
               { key: 'queryInspector',label: 'Query Inspector',     desc: 'View and copy all generated SQL' },
