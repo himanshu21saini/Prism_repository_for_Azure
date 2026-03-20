@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import SetupScreen from '../components/SetupScreen'
 import Dashboard from '../components/Dashboard'
+import { APP_NAME, APP_TAGLINE } from '../lib/app-config'
 
 export default function Home() {
   var [appState, setAppState] = useState('setup')
@@ -27,15 +28,13 @@ export default function Home() {
         }}>
           {/* Logo / wordmark */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            {/* Teal bar logo mark */}
+            {/* Bar chart logomark */}
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3 }}>
               {[14, 10, 18, 10, 14].map(function(h, i) {
                 return (
                   <div key={i} style={{
                     width: 3, height: h,
-                    background: i === 2
-                      ? 'var(--accent)'
-                      : 'rgba(0,200,240,0.4)',
+                    background: i === 2 ? 'var(--accent)' : 'rgba(0,200,240,0.4)',
                     borderRadius: 2,
                     transition: 'height var(--transition)',
                   }} />
@@ -49,13 +48,10 @@ export default function Home() {
               color: 'var(--text-primary)',
               letterSpacing: '0.06em',
             }}>
-              INTELLIGENCE
+              {APP_NAME.toUpperCase()}
             </span>
 
-            <div style={{
-              width: 1, height: 18,
-              background: 'var(--border-strong)',
-            }} />
+            <div style={{ width: 1, height: 18, background: 'var(--border-strong)' }} />
 
             <span style={{
               fontSize: 10, fontWeight: 500,
@@ -63,7 +59,7 @@ export default function Home() {
               color: 'var(--text-accent)',
               fontFamily: 'var(--font-body)',
             }}>
-              Private Banking
+              {APP_TAGLINE}
             </span>
           </div>
 
