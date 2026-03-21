@@ -166,11 +166,35 @@ export async function POST(request) {
   var content = llmJson.choices && llmJson.choices[0] && llmJson.choices[0].message && llmJson.choices[0].message.content
   if (!content) return Response.json({ error: 'Empty response from LLM.' }, { status: 500 })
 
-  var parsed
+ var parsed
   try {
-    parsed = JSON.parse(content.replace(/```json|```/g, '').trim())
+    var cleaned = content.replace(/```json/g, '').replace(/```/g, '').trim()
+    parsed = JSON.parse(cleaned)
   } catch(e) {
-    return Response.json({ error: 'Could not parse LLM response as JSON.' }, { status: 500 })
+    // Log the raw response to Vercel logs so you can see what came back
+    console.error('LLM raw response:', content.slice(0, 500))
+    return Response.json({ error: 'Could not parse LLM response as JSON. Check Vercel logs for raw output.' }, { status: 500 })
+  }
+
+  // Handle all the ways the LLM might wrap the array
+  var fields = null
+  if (Array.isArray(parsed)) {
+    fields = parsed
+  } else if (parsed.fields && Array.isArray(parsed.fields)) {
+    fields = parsed.fields
+  } else if (parsed.metadata && Array.isArray(parsed.metadata)) {
+    fields = parsed.metadata
+  } else {
+    // Last resort — find the first array value in the object
+    var keys = Object.keys(parsed)
+    for (var ki = 0; ki < keys.length; ki++) {
+      if (Array.isArray(parsed[keys[ki]])) { fields = parsed[keys[ki]]; break }
+    }
+  }
+
+  if (!fields || !fields.length) {
+    console.error('Parsed object keys:', Object.keys(parsed))
+    return Response.json({ error: 'LLM returned no fields. Check Vercel logs.' }, { status: 500 })
   }
 
   var fields = parsed.fields || parsed
