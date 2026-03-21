@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import {
   BarChart, Bar, AreaChart, Area, LineChart, Line,
   PieChart, Pie, Cell, ScatterChart, Scatter,
@@ -112,6 +112,8 @@ export default function Dashboard({ session }) {
   var [summaryState, setSummaryState] = useState('idle')
   var [narrative,    setNarrative]    = useState(null)
   var [summaryError, setSummaryError] = useState('')
+  var [exporting,    setExporting]    = useState(false)
+  var dashboardRef = useRef(null)
 
   var [decisionState, setDecisionState] = useState('idle')
   var [decisionResult, setDecisionResult] = useState(null)
@@ -240,6 +242,94 @@ export default function Dashboard({ session }) {
         setTokenCalls(function(prev) { return prev.concat([{ label: 'summary', promptTokens: json.usage.prompt_tokens, completionTokens: json.usage.completion_tokens, model: json.usage.model || 'gpt-4o-mini' }]) })
       }
     } catch (err) { setSummaryError(err.message); setSummaryState('error') }
+  }
+
+
+  async function handleExportPDF() {
+    if (!dashboardRef.current || exporting) return
+    setExporting(true)
+    try {
+      var [html2canvasMod, jspdfMod] = await Promise.all([
+        import('html2canvas'),
+        import('jspdf'),
+      ])
+      var html2canvas = html2canvasMod.default
+      var jsPDF       = jspdfMod.default
+
+      var el  = dashboardRef.current
+      var A4W = 210; var A4H = 297; var margin = 12
+
+      var canvas = await html2canvas(el, {
+        scale: 2, useCORS: true,
+        backgroundColor: '#070D1A',
+        logging: false,
+        windowWidth: el.scrollWidth,
+        windowHeight: el.scrollHeight,
+      })
+
+      var pdf     = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+      var imgW    = A4W - margin * 2
+      var imgH    = (canvas.height * imgW) / canvas.width
+      var headerH = 14; var footerH = 10
+      var contentH = A4H - headerH - footerH - margin
+      var y = 0; var pageNum = 1
+
+      function drawHeader() {
+        pdf.setFillColor(13, 25, 48)
+        pdf.rect(0, 0, A4W, 14, 'F')
+        pdf.setFont('helvetica', 'bold')
+        pdf.setFontSize(9)
+        pdf.setTextColor(0, 200, 240)
+        pdf.text('PRISM', margin, 9)
+        if (periodInfo.viewLabel) {
+          pdf.setFont('helvetica', 'normal')
+          pdf.setFontSize(7)
+          pdf.setTextColor(139, 180, 216)
+          pdf.text(periodInfo.viewLabel + '  ·  ' + (periodInfo.cmpLabel || ''), margin + 18, 9)
+        }
+        pdf.setFont('helvetica', 'normal')
+        pdf.setFontSize(7)
+        pdf.setTextColor(61, 96, 128)
+        pdf.text('Page ' + pageNum, A4W - margin, 9, { align: 'right' })
+        pdf.setDrawColor(0, 200, 240)
+        pdf.setLineWidth(0.3)
+        pdf.line(0, 14, A4W, 14)
+      }
+
+      function drawFooter() {
+        pdf.setFillColor(13, 25, 48)
+        pdf.rect(0, A4H - 10, A4W, 10, 'F')
+        pdf.setFont('helvetica', 'normal')
+        pdf.setFontSize(6)
+        pdf.setTextColor(61, 96, 128)
+        var now = new Date()
+        var stamp = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) +
+          '  ' + now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+        pdf.text('Generated: ' + stamp, margin, A4H - 4)
+        pdf.text('PRISM Intelligence Platform  ·  Confidential', A4W - margin, A4H - 4, { align: 'right' })
+      }
+
+      while (y < imgH) {
+        drawHeader(); drawFooter()
+        var sliceH = Math.min(contentH, imgH - y)
+        var srcY   = (y / imgH) * canvas.height
+        var srcH   = (sliceH / imgH) * canvas.height
+        var slice  = document.createElement('canvas')
+        slice.width = canvas.width; slice.height = srcH
+        slice.getContext('2d').drawImage(canvas, 0, srcY, canvas.width, srcH, 0, 0, canvas.width, srcH)
+        pdf.addImage(slice.toDataURL('image/jpeg', 0.92), 'JPEG', margin, headerH, imgW, sliceH)
+        y += sliceH
+        if (y < imgH) { pdf.addPage(); pageNum++ }
+      }
+
+      var label    = (periodInfo.viewLabel || 'dashboard').replace(/[^a-zA-Z0-9]/g, '_')
+      var filename = 'PRISM_' + label + '_' + new Date().toISOString().slice(0, 10) + '.pdf'
+      pdf.save(filename)
+    } catch (err) {
+      console.error('PDF export error:', err)
+      alert('Export failed: ' + (err.message || 'Unknown error'))
+    }
+    setExporting(false)
   }
 
   async function handleGenerateDecisions() {
@@ -432,7 +522,7 @@ export default function Dashboard({ session }) {
   }
 
   return (
-    <div style={{ maxWidth: 1320, margin: '0 auto', padding: '28px 28px 80px' }}>
+    <div ref={dashboardRef} style={{ maxWidth: 1320, margin: '0 auto', padding: '28px 28px 80px' }}>
 
       {/* ── Period Banner ─────────────────────────────────────────── */}
       {periodInfo.viewLabel && (
@@ -490,6 +580,33 @@ export default function Dashboard({ session }) {
                 }
               </button>
               )}
+
+              {/* ── Export PDF button ── */}
+              <button
+                onClick={handleExportPDF}
+                disabled={exporting}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 7, padding: '10px 16px',
+                  background: exporting ? 'transparent' : 'linear-gradient(135deg, rgba(0,180,160,0.12) 0%, rgba(0,140,120,0.08) 100%)',
+                  border: '1px solid ' + (exporting ? 'var(--border)' : 'rgba(0,180,160,0.3)'),
+                  borderRadius: 'var(--radius-md)',
+                  fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase',
+                  color: exporting ? 'var(--text-tertiary)' : '#00B4A0',
+                  cursor: exporting ? 'not-allowed' : 'pointer',
+                  fontFamily: 'var(--font-display)', transition: 'all var(--transition)', flexShrink: 0,
+                }}
+              >
+                {exporting
+                  ? <><span className="spinner" style={{ borderTopColor: '#00B4A0', borderColor: 'var(--border)' }} /> Exporting...</>
+                  : <>
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                        <path d="M6 1v7M3 5l3 3 3-3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M1 9v1.5A.5.5 0 0 0 1.5 11h9a.5.5 0 0 0 .5-.5V9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+                      </svg>
+                      Export PDF
+                    </>
+                }
+              </button>
 
               {prefs.summary !== false && (
               <button
