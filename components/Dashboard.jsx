@@ -248,6 +248,80 @@ export default function Dashboard({ session }) {
   async function handleExportPDF() {
     if (!dashboardRef.current || exporting) return
     setExporting(true)
+
+    // ── Step 1: patch live DOM before capture ────────────────────────────────
+    // html2canvas does not support:
+    //   - backdrop-filter: blur()  → renders as black
+    //   - CSS custom properties    → resolves to empty/transparent
+    //   - SVG foreignObject        → partial support
+    //
+    // Strategy: walk every element in the live dashboard div, save its current
+    // inline styles, then override with computed concrete values. Restore after.
+    var el      = dashboardRef.current
+    var patches = []   // { element, prop, before } — for restore
+
+    function patchEl(domEl) {
+      var cs = window.getComputedStyle(domEl)
+
+      function set(prop, val) {
+        patches.push({ el: domEl, prop: prop, before: domEl.style[prop] })
+        domEl.style[prop] = val
+      }
+
+      // Remove backdrop-filter — html2canvas renders it as solid black
+      if (cs.backdropFilter && cs.backdropFilter !== 'none') {
+        set('backdropFilter', 'none')
+        set('webkitBackdropFilter', 'none')
+      }
+
+      // Force opaque concrete background — replaces any var(--x) or rgba with alpha
+      var bg = cs.backgroundColor
+      if (!bg || bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent') {
+        // Element has no background — leave alone (SVG / text spans etc)
+      } else {
+        set('backgroundColor', bg)
+      }
+
+      // Force concrete text colour
+      var col = cs.color
+      if (col) set('color', col)
+
+      // Force border colour
+      var bc = cs.borderColor
+      if (bc) set('borderColor', bc)
+    }
+
+    // Patch root element plus all descendants
+    patchEl(el)
+    var allEls = el.querySelectorAll('*')
+    allEls.forEach(function(child) { patchEl(child) })
+
+    // Also inject a <style> tag into document head with all CSS vars resolved
+    // so that any pseudo-elements or dynamically applied styles also get real values
+    var liveRoot  = getComputedStyle(document.documentElement)
+    var cssVarText = ':root{'
+    try {
+      for (var si = 0; si < document.styleSheets.length; si++) {
+        var rules = document.styleSheets[si].cssRules || []
+        for (var ri = 0; ri < rules.length; ri++) {
+          var rule = rules[ri]
+          if (!rule.style) continue
+          for (var pi = 0; pi < rule.style.length; pi++) {
+            var pname = rule.style[pi]
+            if (pname && pname.startsWith('--')) {
+              var pval = liveRoot.getPropertyValue(pname).trim()
+              if (pval) cssVarText += pname + ':' + pval + ';'
+            }
+          }
+        }
+      }
+    } catch(e) { /* cross-origin stylesheet, skip */ }
+    cssVarText += '}'
+    var varStyle = document.createElement('style')
+    varStyle.id  = 'prism-pdf-vars'
+    varStyle.textContent = cssVarText
+    document.head.appendChild(varStyle)
+
     try {
       var [html2canvasMod, jspdfMod] = await Promise.all([
         import('html2canvas'),
@@ -256,67 +330,7 @@ export default function Dashboard({ session }) {
       var html2canvas = html2canvasMod.default
       var jsPDF       = jspdfMod.default
 
-      var el  = dashboardRef.current
       var A4W = 210; var A4H = 297; var margin = 12
-
-      // ── Resolve CSS custom properties before capture ──────────────────────
-      // html2canvas v1 does not resolve var(--x) in cloned documents.
-      // The correct fix: read ALL CSS custom property values from the LIVE document,
-      // then inject them as a concrete <style> tag into the clone's <head>.
-      // This way every var(--x) in the clone resolves to its real computed value.
-      function buildVarStyleTag(cloneDoc) {
-        var liveComputed = getComputedStyle(document.documentElement)
-        var cssText = ':root{'
-
-        // Collect every custom property defined in any live stylesheet
-        var seen = {}
-        for (var si = 0; si < document.styleSheets.length; si++) {
-          try {
-            var rules = document.styleSheets[si].cssRules || []
-            for (var ri = 0; ri < rules.length; ri++) {
-              var rule = rules[ri]
-              if (!rule.style) continue
-              for (var pi = 0; pi < rule.style.length; pi++) {
-                var name = rule.style[pi]
-                if (name.startsWith('--') && !seen[name]) {
-                  seen[name] = true
-                  var val = liveComputed.getPropertyValue(name).trim()
-                  if (val) cssText += name + ':' + val + ';'
-                }
-              }
-            }
-          } catch(e) { /* cross-origin stylesheet — skip */ }
-        }
-
-        cssText += '}'
-        var styleEl = cloneDoc.createElement('style')
-        styleEl.textContent = cssText
-        cloneDoc.head.insertBefore(styleEl, cloneDoc.head.firstChild)
-      }
-
-      // Also inline computed background + color on every element so even
-      // elements with dynamic inline styles render correctly.
-      function inlineComputedColors(cloneDoc) {
-        var liveEls  = el.querySelectorAll('*')
-        var cloneEls = cloneDoc.querySelectorAll('[data-html2canvas-clone]') // not reliable
-        // Walk the live elements and read their computed styles
-        // then apply the same values to the matching clone elements by index
-        var liveList  = Array.from(el.querySelectorAll('*'))
-        var cloneList = Array.from(cloneDoc.querySelectorAll('*')).filter(function(e) {
-          return e.tagName !== 'HEAD' && e.tagName !== 'SCRIPT' && e.tagName !== 'STYLE'
-        })
-
-        var len = Math.min(liveList.length, cloneList.length)
-        for (var i = 0; i < len; i++) {
-          try {
-            var cs  = window.getComputedStyle(liveList[i])
-            var cel = cloneList[i]
-            cel.style.backgroundColor = cs.backgroundColor
-            cel.style.color           = cs.color
-            cel.style.borderColor     = cs.borderColor
-          } catch(e) {}
-        }
-      }
 
       var canvas = await html2canvas(el, {
         scale:           2,
@@ -324,21 +338,21 @@ export default function Dashboard({ session }) {
         allowTaint:      true,
         backgroundColor: '#070D1A',
         logging:         false,
-        imageTimeout:    15000,
-        onclone: function(clonedDoc) {
-          buildVarStyleTag(clonedDoc)    // inject resolved CSS vars into clone head
-          inlineComputedColors(clonedDoc) // inline bg + color from live elements
-        },
-        ignoreElements: function(element) {
-          var pos = window.getComputedStyle(element).position
-          return pos === 'fixed' || pos === 'sticky'
-        },
+        imageTimeout:    20000,
+        removeContainer: true,
+        // No onclone needed — live DOM is already patched
       })
 
-      var pdf    = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-      var imgW   = A4W - margin * 2
-      var imgH   = (canvas.height * imgW) / canvas.width
-      var headerH = 14; var footerH = 10
+      // ── Step 2: restore live DOM ──────────────────────────────────────────
+      patches.forEach(function(p) { p.el.style[p.prop] = p.before })
+      var vs = document.getElementById('prism-pdf-vars')
+      if (vs) vs.remove()
+
+      // ── Step 3: build PDF ─────────────────────────────────────────────────
+      var pdf      = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+      var imgW     = A4W - margin * 2
+      var imgH     = (canvas.height * imgW) / canvas.width
+      var headerH  = 14; var footerH = 10
       var contentH = A4H - headerH - footerH - margin
       var y = 0; var pageNum = 1
 
@@ -353,7 +367,7 @@ export default function Dashboard({ session }) {
           pdf.setFont('helvetica', 'normal')
           pdf.setFontSize(7)
           pdf.setTextColor(139, 180, 216)
-          pdf.text(periodInfo.viewLabel + '  ·  ' + (periodInfo.cmpLabel || ''), margin + 18, 9)
+          pdf.text(periodInfo.viewLabel + '  \u00b7  ' + (periodInfo.cmpLabel || ''), margin + 18, 9)
         }
         pdf.setFont('helvetica', 'normal')
         pdf.setFontSize(7)
@@ -374,7 +388,7 @@ export default function Dashboard({ session }) {
         var stamp = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) +
           '  ' + now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
         pdf.text('Generated: ' + stamp, margin, A4H - 4)
-        pdf.text('PRISM Intelligence Platform  ·  Confidential', A4W - margin, A4H - 4, { align: 'right' })
+        pdf.text('PRISM Intelligence Platform  \u00b7  Confidential', A4W - margin, A4H - 4, { align: 'right' })
       }
 
       while (y < imgH) {
@@ -383,7 +397,8 @@ export default function Dashboard({ session }) {
         var srcY   = (y / imgH) * canvas.height
         var srcH   = (sliceH / imgH) * canvas.height
         var slice  = document.createElement('canvas')
-        slice.width = canvas.width; slice.height = Math.ceil(srcH)
+        slice.width  = canvas.width
+        slice.height = Math.ceil(srcH)
         slice.getContext('2d').drawImage(
           canvas, 0, srcY, canvas.width, srcH, 0, 0, canvas.width, Math.ceil(srcH)
         )
@@ -395,10 +410,16 @@ export default function Dashboard({ session }) {
       var label    = (periodInfo.viewLabel || 'dashboard').replace(/[^a-zA-Z0-9]/g, '_')
       var filename = 'PRISM_' + label + '_' + new Date().toISOString().slice(0, 10) + '.pdf'
       pdf.save(filename)
+
     } catch (err) {
+      // Restore DOM even if capture fails
+      patches.forEach(function(p) { p.el.style[p.prop] = p.before })
+      var vs2 = document.getElementById('prism-pdf-vars')
+      if (vs2) vs2.remove()
       console.error('PDF export error:', err)
-      alert('Export failed: ' + (err.message || 'Unknown error. Check browser console for details.'))
+      alert('Export failed: ' + (err.message || 'Check browser console for details.'))
     }
+
     setExporting(false)
   }
 
