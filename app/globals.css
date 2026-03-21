@@ -203,10 +203,24 @@ option { background: var(--surface-2); color: var(--text-primary); }
 */
 @media print {
   /* Force dark background throughout */
+  * /* Force dark background throughout — Safari requires -webkit-print-color-adjust */
   * {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust:         exact !important;
     color-adjust:               exact !important;
+  }
+
+  /* Safari-specific: force body background to paint */
+  html, body {
+    background-color: #070D1A !important;
+    -webkit-print-color-adjust: exact !important;
+  }
+
+  /* Safari strips backgrounds on elements without explicit background-color.
+     Force the known surface colours as concrete values, not CSS variables,
+     because Safari's print engine sometimes fails to resolve var() in @media print. */
+  [style*="background"] {
+    -webkit-print-color-adjust: exact !important;
   }
 
   /* Hide everything except the dashboard content */
