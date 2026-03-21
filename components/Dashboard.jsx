@@ -259,17 +259,77 @@ export default function Dashboard({ session }) {
       var el  = dashboardRef.current
       var A4W = 210; var A4H = 297; var margin = 12
 
+      // ── Resolve CSS custom properties before capture ──────────────────────
+      // html2canvas v1 does not resolve var(--x) — values render as transparent/black.
+      // onclone receives a deep copy of the DOM before capture. We walk every element
+      // and replace computed var() values with their resolved hex/rgb equivalents.
+      function resolveStyles(cloneDoc) {
+        var allEls = cloneDoc.querySelectorAll('*')
+        var refEl  = document.documentElement  // use live doc for getComputedStyle
+
+        // Properties that commonly use CSS vars in this app
+        var props = [
+          'color', 'background', 'backgroundColor', 'background-color',
+          'border', 'borderColor', 'border-color',
+          'borderTopColor', 'borderRightColor', 'borderBottomColor', 'borderLeftColor',
+          'boxShadow', 'box-shadow',
+          'fill', 'stroke',
+        ]
+
+        allEls.forEach(function(el) {
+          var computed = window.getComputedStyle(el)
+          var st = el.style
+          props.forEach(function(prop) {
+            var val = computed.getPropertyValue(prop)
+            if (val && val.includes('var(')) {
+              // Replace any remaining var() with transparent to avoid black boxes
+              st.setProperty(prop, val.replace(/var\([^)]+\)/g, 'transparent'))
+            } else if (val) {
+              try { st.setProperty(prop, val) } catch(e) {}
+            }
+          })
+
+          // Force background explicitly for key surface colours
+          var bg = computed.backgroundColor
+          if (bg) el.style.backgroundColor = bg
+
+          // Force text colour
+          var col = computed.color
+          if (col) el.style.color = col
+        })
+
+        // Resolve CSS variables on the clone root using values from live document
+        var liveRoot = getComputedStyle(document.documentElement)
+        var vars = [
+          '--bg', '--surface', '--surface-2', '--surface-3',
+          '--text-primary', '--text-secondary', '--text-tertiary',
+          '--accent', '--border', '--border-strong',
+          '--green', '--red', '--amber',
+        ]
+        vars.forEach(function(v) {
+          var val = liveRoot.getPropertyValue(v).trim()
+          if (val) cloneDoc.documentElement.style.setProperty(v, val)
+        })
+      }
+
       var canvas = await html2canvas(el, {
-        scale: 2, useCORS: true,
+        scale:           2,
+        useCORS:         true,
+        allowTaint:      true,
         backgroundColor: '#070D1A',
-        logging: false,
-        windowWidth: el.scrollWidth,
-        windowHeight: el.scrollHeight,
+        logging:         false,
+        imageTimeout:    15000,
+        onclone:         function(clonedDoc) { resolveStyles(clonedDoc) },
+        ignoreElements:  function(element) {
+          // Skip fixed-position elements like the sticky nav header — not part of dashboard
+          var pos = window.getComputedStyle(element).position
+          return pos === 'fixed' || pos === 'sticky'
+        },
       })
 
-      var pdf     = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-      var imgW    = A4W - margin * 2
-      var imgH    = (canvas.height * imgW) / canvas.width
+      var pdf    = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+      var imgW   = A4W - margin * 2
+      var imgH   = (canvas.height * imgW) / canvas.width
       var headerH = 14; var footerH = 10
       var contentH = A4H - headerH - footerH - margin
       var y = 0; var pageNum = 1
@@ -302,7 +362,7 @@ export default function Dashboard({ session }) {
         pdf.setFont('helvetica', 'normal')
         pdf.setFontSize(6)
         pdf.setTextColor(61, 96, 128)
-        var now = new Date()
+        var now   = new Date()
         var stamp = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) +
           '  ' + now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
         pdf.text('Generated: ' + stamp, margin, A4H - 4)
@@ -315,8 +375,10 @@ export default function Dashboard({ session }) {
         var srcY   = (y / imgH) * canvas.height
         var srcH   = (sliceH / imgH) * canvas.height
         var slice  = document.createElement('canvas')
-        slice.width = canvas.width; slice.height = srcH
-        slice.getContext('2d').drawImage(canvas, 0, srcY, canvas.width, srcH, 0, 0, canvas.width, srcH)
+        slice.width = canvas.width; slice.height = Math.ceil(srcH)
+        slice.getContext('2d').drawImage(
+          canvas, 0, srcY, canvas.width, srcH, 0, 0, canvas.width, Math.ceil(srcH)
+        )
         pdf.addImage(slice.toDataURL('image/jpeg', 0.92), 'JPEG', margin, headerH, imgW, sliceH)
         y += sliceH
         if (y < imgH) { pdf.addPage(); pageNum++ }
@@ -327,7 +389,7 @@ export default function Dashboard({ session }) {
       pdf.save(filename)
     } catch (err) {
       console.error('PDF export error:', err)
-      alert('Export failed: ' + (err.message || 'Unknown error'))
+      alert('Export failed: ' + (err.message || 'Unknown error. Check browser console for details.'))
     }
     setExporting(false)
   }
@@ -557,7 +619,33 @@ export default function Dashboard({ session }) {
               </p>
             </div>
 
-            <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+
+              {/* 1 — Generate Summary */}
+              {prefs.summary !== false && (
+              <button
+                onClick={handleGenerateSummary}
+                disabled={summaryState === 'loading'}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px',
+                  background: summaryState === 'loading' ? 'transparent' : 'linear-gradient(135deg, rgba(0,200,240,0.15) 0%, rgba(43,127,227,0.1) 100%)',
+                  border: '1px solid ' + (summaryState === 'loading' ? 'var(--border)' : 'var(--accent-border)'),
+                  borderRadius: 'var(--radius-md)',
+                  fontSize: 11, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase',
+                  color: summaryState === 'loading' ? 'var(--text-tertiary)' : 'var(--text-accent)',
+                  cursor: summaryState === 'loading' ? 'not-allowed' : 'pointer',
+                  fontFamily: 'var(--font-display)', transition: 'all var(--transition)',
+                  boxShadow: summaryState === 'loading' ? 'none' : '0 0 16px rgba(0,200,240,0.08)',
+                }}
+              >
+                {summaryState === 'loading'
+                  ? <><span className="spinner" /> Composing...</>
+                  : <>{summaryState === 'done' ? 'Regenerate Summary' : 'Generate Summary'}</>
+                }
+              </button>
+              )}
+
+              {/* 2 — Generate Decisions */}
               {prefs.decisions !== false && (
               <button
                 onClick={handleGenerateDecisions}
@@ -581,55 +669,44 @@ export default function Dashboard({ session }) {
               </button>
               )}
 
-              {/* ── Export PDF button ── */}
-              <button
-                onClick={handleExportPDF}
-                disabled={exporting}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 7, padding: '10px 16px',
-                  background: exporting ? 'transparent' : 'linear-gradient(135deg, rgba(0,180,160,0.12) 0%, rgba(0,140,120,0.08) 100%)',
-                  border: '1px solid ' + (exporting ? 'var(--border)' : 'rgba(0,180,160,0.3)'),
-                  borderRadius: 'var(--radius-md)',
-                  fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase',
-                  color: exporting ? 'var(--text-tertiary)' : '#00B4A0',
-                  cursor: exporting ? 'not-allowed' : 'pointer',
-                  fontFamily: 'var(--font-display)', transition: 'all var(--transition)', flexShrink: 0,
-                }}
-              >
-                {exporting
-                  ? <><span className="spinner" style={{ borderTopColor: '#00B4A0', borderColor: 'var(--border)' }} /> Exporting...</>
-                  : <>
-                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                        <path d="M6 1v7M3 5l3 3 3-3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-                        <path d="M1 9v1.5A.5.5 0 0 0 1.5 11h9a.5.5 0 0 0 .5-.5V9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+              {/* 3 — Export PDF: small icon button with tooltip, separated by a divider */}
+              <div style={{ width: 1, height: 20, background: 'var(--border)', flexShrink: 0 }} />
+              <div style={{ position: 'relative' }} title={exporting ? 'Exporting...' : 'Export dashboard as PDF'}>
+                <button
+                  onClick={handleExportPDF}
+                  disabled={exporting}
+                  style={{
+                    width: 36, height: 36,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: exporting ? 'transparent' : 'var(--surface-2)',
+                    border: '1px solid ' + (exporting ? 'var(--border)' : 'rgba(0,180,160,0.25)'),
+                    borderRadius: 'var(--radius-md)',
+                    color: exporting ? 'var(--text-tertiary)' : '#00B4A0',
+                    cursor: exporting ? 'not-allowed' : 'pointer',
+                    transition: 'all var(--transition)', flexShrink: 0,
+                    padding: 0,
+                  }}
+                  onMouseEnter={function(e) {
+                    if (!exporting) {
+                      e.currentTarget.style.background = 'rgba(0,180,160,0.1)'
+                      e.currentTarget.style.boxShadow  = '0 0 10px rgba(0,180,160,0.15)'
+                    }
+                  }}
+                  onMouseLeave={function(e) {
+                    e.currentTarget.style.background = exporting ? 'transparent' : 'var(--surface-2)'
+                    e.currentTarget.style.boxShadow  = 'none'
+                  }}
+                >
+                  {exporting
+                    ? <span className="spinner" style={{ width: 14, height: 14, borderWidth: 1.5, borderTopColor: '#00B4A0', borderColor: 'var(--border)' }} />
+                    : <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                        <path d="M7 1.5v8M4 7l3 3.5 3-3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M1.5 10.5v1.5a.5.5 0 0 0 .5.5h10a.5.5 0 0 0 .5-.5v-1.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
                       </svg>
-                      Export PDF
-                    </>
-                }
-              </button>
+                  }
+                </button>
+              </div>
 
-              {prefs.summary !== false && (
-              <button
-                onClick={handleGenerateSummary}
-                disabled={summaryState === 'loading'}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px',
-                  background: summaryState === 'loading' ? 'transparent' : 'linear-gradient(135deg, rgba(0,200,240,0.15) 0%, rgba(43,127,227,0.1) 100%)',
-                  border: '1px solid ' + (summaryState === 'loading' ? 'var(--border)' : 'var(--accent-border)'),
-                  borderRadius: 'var(--radius-md)',
-                  fontSize: 11, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase',
-                  color: summaryState === 'loading' ? 'var(--text-tertiary)' : 'var(--text-accent)',
-                  cursor: summaryState === 'loading' ? 'not-allowed' : 'pointer',
-                  fontFamily: 'var(--font-display)', transition: 'all var(--transition)',
-                  boxShadow: summaryState === 'loading' ? 'none' : '0 0 16px rgba(0,200,240,0.08)',
-                }}
-              >
-                {summaryState === 'loading'
-                  ? <><span className="spinner" /> Composing...</>
-                  : <>{summaryState === 'done' ? 'Regenerate Summary' : 'Generate Summary'}</>
-                }
-              </button>
-              )}
             </div>
           </div>
 
