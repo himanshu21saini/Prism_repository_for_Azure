@@ -260,56 +260,62 @@ export default function Dashboard({ session }) {
       var A4W = 210; var A4H = 297; var margin = 12
 
       // ── Resolve CSS custom properties before capture ──────────────────────
-      // html2canvas v1 does not resolve var(--x) — values render as transparent/black.
-      // onclone receives a deep copy of the DOM before capture. We walk every element
-      // and replace computed var() values with their resolved hex/rgb equivalents.
-      function resolveStyles(cloneDoc) {
-        var allEls = cloneDoc.querySelectorAll('*')
-        var refEl  = document.documentElement  // use live doc for getComputedStyle
+      // html2canvas v1 does not resolve var(--x) in cloned documents.
+      // The correct fix: read ALL CSS custom property values from the LIVE document,
+      // then inject them as a concrete <style> tag into the clone's <head>.
+      // This way every var(--x) in the clone resolves to its real computed value.
+      function buildVarStyleTag(cloneDoc) {
+        var liveComputed = getComputedStyle(document.documentElement)
+        var cssText = ':root{'
 
-        // Properties that commonly use CSS vars in this app
-        var props = [
-          'color', 'background', 'backgroundColor', 'background-color',
-          'border', 'borderColor', 'border-color',
-          'borderTopColor', 'borderRightColor', 'borderBottomColor', 'borderLeftColor',
-          'boxShadow', 'box-shadow',
-          'fill', 'stroke',
-        ]
-
-        allEls.forEach(function(el) {
-          var computed = window.getComputedStyle(el)
-          var st = el.style
-          props.forEach(function(prop) {
-            var val = computed.getPropertyValue(prop)
-            if (val && val.includes('var(')) {
-              // Replace any remaining var() with transparent to avoid black boxes
-              st.setProperty(prop, val.replace(/var\([^)]+\)/g, 'transparent'))
-            } else if (val) {
-              try { st.setProperty(prop, val) } catch(e) {}
+        // Collect every custom property defined in any live stylesheet
+        var seen = {}
+        for (var si = 0; si < document.styleSheets.length; si++) {
+          try {
+            var rules = document.styleSheets[si].cssRules || []
+            for (var ri = 0; ri < rules.length; ri++) {
+              var rule = rules[ri]
+              if (!rule.style) continue
+              for (var pi = 0; pi < rule.style.length; pi++) {
+                var name = rule.style[pi]
+                if (name.startsWith('--') && !seen[name]) {
+                  seen[name] = true
+                  var val = liveComputed.getPropertyValue(name).trim()
+                  if (val) cssText += name + ':' + val + ';'
+                }
+              }
             }
-          })
+          } catch(e) { /* cross-origin stylesheet — skip */ }
+        }
 
-          // Force background explicitly for key surface colours
-          var bg = computed.backgroundColor
-          if (bg) el.style.backgroundColor = bg
+        cssText += '}'
+        var styleEl = cloneDoc.createElement('style')
+        styleEl.textContent = cssText
+        cloneDoc.head.insertBefore(styleEl, cloneDoc.head.firstChild)
+      }
 
-          // Force text colour
-          var col = computed.color
-          if (col) el.style.color = col
+      // Also inline computed background + color on every element so even
+      // elements with dynamic inline styles render correctly.
+      function inlineComputedColors(cloneDoc) {
+        var liveEls  = el.querySelectorAll('*')
+        var cloneEls = cloneDoc.querySelectorAll('[data-html2canvas-clone]') // not reliable
+        // Walk the live elements and read their computed styles
+        // then apply the same values to the matching clone elements by index
+        var liveList  = Array.from(el.querySelectorAll('*'))
+        var cloneList = Array.from(cloneDoc.querySelectorAll('*')).filter(function(e) {
+          return e.tagName !== 'HEAD' && e.tagName !== 'SCRIPT' && e.tagName !== 'STYLE'
         })
 
-        // Resolve CSS variables on the clone root using values from live document
-        var liveRoot = getComputedStyle(document.documentElement)
-        var vars = [
-          '--bg', '--surface', '--surface-2', '--surface-3',
-          '--text-primary', '--text-secondary', '--text-tertiary',
-          '--accent', '--border', '--border-strong',
-          '--green', '--red', '--amber',
-        ]
-        vars.forEach(function(v) {
-          var val = liveRoot.getPropertyValue(v).trim()
-          if (val) cloneDoc.documentElement.style.setProperty(v, val)
-        })
+        var len = Math.min(liveList.length, cloneList.length)
+        for (var i = 0; i < len; i++) {
+          try {
+            var cs  = window.getComputedStyle(liveList[i])
+            var cel = cloneList[i]
+            cel.style.backgroundColor = cs.backgroundColor
+            cel.style.color           = cs.color
+            cel.style.borderColor     = cs.borderColor
+          } catch(e) {}
+        }
       }
 
       var canvas = await html2canvas(el, {
@@ -319,9 +325,11 @@ export default function Dashboard({ session }) {
         backgroundColor: '#070D1A',
         logging:         false,
         imageTimeout:    15000,
-        onclone:         function(clonedDoc) { resolveStyles(clonedDoc) },
-        ignoreElements:  function(element) {
-          // Skip fixed-position elements like the sticky nav header — not part of dashboard
+        onclone: function(clonedDoc) {
+          buildVarStyleTag(clonedDoc)    // inject resolved CSS vars into clone head
+          inlineComputedColors(clonedDoc) // inline bg + color from live elements
+        },
+        ignoreElements: function(element) {
           var pos = window.getComputedStyle(element).position
           return pos === 'fixed' || pos === 'sticky'
         },
