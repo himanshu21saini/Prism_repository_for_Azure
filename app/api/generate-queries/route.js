@@ -314,102 +314,214 @@ function formatPreAnalysis(preAnalysis) {
 
 
 // ── Intent-specific query builder ────────────────────────────────────────────
+// All SQL strings use double-quote JS delimiters to avoid collision with
+// Postgres data->>'field' single quotes inside the string.
 function buildIntentQueries(intent, datasetId, f, CF) {
-  if (!intent || !intent.type || intent.type === 'null') return []
+  if (!intent || !intent.type || intent.type === "null") return []
 
   var queries = []
-  var base = 'FROM dataset_rows WHERE dataset_id = ' + datasetId + ' AND ' + f.curCond + CF
+  var base = "FROM dataset_rows WHERE dataset_id = " + datasetId + " AND " + f.curCond + CF
 
+  // Safe ORDER BY — casts to integer only when field name looks numeric/sequential.
+  // Falls back to plain text sort for display-label fields like interval names.
   function safeIntOrder(field) {
     if (/sort|order|seq|num|idx|id$/i.test(field)) {
-      return "CASE WHEN (data->>'"+field+"') ~ '^[0-9]+$' THEN (data->>'"+field+"')::integer ELSE 0 END ASC, data->>'"+field+"' ASC"
+      return "CASE WHEN (data->>'" + field + "') ~ '^[0-9]+$' THEN (data->>'" + field + "')::integer ELSE 0 END ASC, data->>'" + field + "' ASC"
     }
-    return "data->>'"+field+"' ASC"
+    return "data->>'" + field + "' ASC"
   }
 
-  if (intent.type === 'ranking' || intent.type === 'ranking_with_drilldown') {
-    var entity = intent.primary_entity        || 'branch_name'
-    var metric = intent.primary_metric        || 'bfi_2_score'
-    var topN   = parseInt(intent.top_n)       || 10
-    var dir    = (intent.direction || 'desc').toUpperCase()
-    var eDisp  = intent.primary_entity_display  || entity
-    var mDisp  = intent.primary_metric_display  || metric
+  // ── RANKING ───────────────────────────────────────────────────────────────
+  if (intent.type === "ranking" || intent.type === "ranking_with_drilldown") {
+    var entity = intent.primary_entity         || "branch_name"
+    var metric = intent.primary_metric         || "bfi_2_score"
+    var topN   = parseInt(intent.top_n)        || 10
+    var dir    = (intent.direction || "desc").toUpperCase()
+    var eDisp  = intent.primary_entity_display || entity
+    var mDisp  = intent.primary_metric_display || metric
+
+    var rankSQL = "SELECT data->>'" + entity + "' AS label, " +
+      "AVG(COALESCE((data->>'" + metric + "')::numeric, 0)) AS current_value " +
+      base + " AND data->>'" + entity + "' IS NOT NULL AND data->>'" + entity + "' != '' " +
+      "GROUP BY data->>'" + entity + "' ORDER BY current_value " + dir + " LIMIT " + topN
 
     queries.push({
-      id: 'intent_ranking_'+entity, title: mDisp+' by '+eDisp+' — Ranked', chart_type: 'bar',
-      sql: 'SELECT data->>''+entity+'' AS label, AVG(COALESCE((data->>''+metric+'')::numeric, 0)) AS current_value '+base+' AND data->>''+entity+'' IS NOT NULL AND data->>''+entity+'' != '' GROUP BY data->>''+entity+'' ORDER BY current_value '+dir+' LIMIT '+topN,
-      current_key: 'current_value', value_key: 'current_value', label_key: 'label', unit: '',
-      insight: 'Ranks every '+eDisp+' by average '+mDisp+'. '+(dir==='DESC'?'Highest values first.':'Lowest values first.'),
-      priority: 50, intent_generated: true,
+      id:               "intent_ranking_" + entity,
+      title:            mDisp + " by " + eDisp + " — Ranked",
+      chart_type:       "bar",
+      sql:              rankSQL,
+      current_key:      "current_value",
+      value_key:        "current_value",
+      label_key:        "label",
+      unit:             "",
+      insight:          "Ranks every " + eDisp + " by average " + mDisp + ". " + (dir === "DESC" ? "Highest values first." : "Lowest values first."),
+      priority:         50,
+      intent_generated: true,
     })
 
+    var stressSQL = "SELECT data->>'Stress Type' AS label, COUNT(*) AS current_value " +
+      base + " AND data->>'Stress Type' IS NOT NULL AND data->>'Stress Type' != '' " +
+      "GROUP BY data->>'Stress Type' ORDER BY current_value DESC"
+
     queries.push({
-      id: 'intent_stress_distribution', title: 'Distribution by Stress Type', chart_type: 'donut',
-      sql: 'SELECT data->>'Stress Type' AS label, COUNT(*) AS current_value '+base+' AND data->>'Stress Type' IS NOT NULL AND data->>'Stress Type' != '' GROUP BY data->>'Stress Type' ORDER BY current_value DESC',
-      current_key: 'current_value', value_key: 'current_value', label_key: 'label', unit: 'count',
-      insight: 'Proportion of intervals in each stress category for the selected period.',
-      priority: 51, intent_generated: true,
+      id:               "intent_stress_distribution",
+      title:            "Distribution by Stress Type",
+      chart_type:       "donut",
+      sql:              stressSQL,
+      current_key:      "current_value",
+      value_key:        "current_value",
+      label_key:        "label",
+      unit:             "count",
+      insight:          "Proportion of records in each stress category for the selected period.",
+      priority:         51,
+      intent_generated: true,
     })
   }
 
-  if (intent.type === 'ranking_with_drilldown') {
-    var ddDim    = intent.drilldown_dimension   || 'interval_sort_order'
-    var ddLabel  = intent.drilldown_label_field || ddDim
-    var ddDisp   = intent.drilldown_display     || ddDim
-    var ddMetric = intent.primary_metric        || 'bfi_2_score'
-    var ddEntity = intent.primary_entity        || 'branch_name'
+  // ── RANKING WITH DRILLDOWN ────────────────────────────────────────────────
+  if (intent.type === "ranking_with_drilldown") {
+    var ddDim    = intent.drilldown_dimension    || "interval_sort_order"
+    var ddLabel  = intent.drilldown_label_field  || ddDim
+    var ddDisp   = intent.drilldown_display      || ddDim
+    var ddMetric = intent.primary_metric         || "bfi_2_score"
+    var ddEntity = intent.primary_entity         || "branch_name"
     var ddMDisp  = intent.primary_metric_display || ddMetric
-    var ddTopN   = parseInt(intent.top_n)       || 5
-    var eDisp    = intent.primary_entity_display || ddEntity
+    var ddEDisp  = intent.primary_entity_display || ddEntity
+    var ddTopN   = parseInt(intent.top_n)        || 5
+
+    // Intra-day / sub-dimension line — avg metric across all entities by time slot
+    var groupByDrill = ddDim !== ddLabel
+      ? "GROUP BY data->>'" + ddLabel + "', data->>'" + ddDim + "'"
+      : "GROUP BY data->>'" + ddLabel + "'"
+
+    var drillSQL = "SELECT data->>'" + ddLabel + "' AS label, " +
+      "AVG(COALESCE((data->>'" + ddMetric + "')::numeric, 0)) AS current_value " +
+      base + " AND data->>'" + ddLabel + "' IS NOT NULL " +
+      groupByDrill + " ORDER BY " + safeIntOrder(ddDim)
 
     queries.push({
-      id: 'intent_drilldown_'+ddDim, title: ddMDisp+' across '+ddDisp+'s', chart_type: 'line',
-      sql: 'SELECT data->>''+ddLabel+'' AS label, AVG(COALESCE((data->>''+ddMetric+'')::numeric, 0)) AS current_value '+base+' AND data->>''+ddLabel+'' IS NOT NULL GROUP BY data->>''+ddLabel+'''+(ddDim!==ddLabel?', data->>''+ddDim+''':'')+' ORDER BY '+safeIntOrder(ddDim),
-      current_key: 'current_value', value_key: 'current_value', label_key: 'label', unit: '',
-      insight: 'Average '+ddMDisp+' per '+ddDisp.toLowerCase()+', across all branches. Peaks = highest-stress time slots.',
-      priority: 52, intent_generated: true,
+      id:               "intent_drilldown_" + ddDim,
+      title:            ddMDisp + " across " + ddDisp + "s",
+      chart_type:       "line",
+      sql:              drillSQL,
+      current_key:      "current_value",
+      value_key:        "current_value",
+      label_key:        "label",
+      unit:             "",
+      insight:          "Average " + ddMDisp + " per " + ddDisp.toLowerCase() + " across all entities. Peaks indicate highest-stress slots.",
+      priority:         52,
+      intent_generated: true,
     })
 
+    // Top-N entity × drilldown slot — rendered as DrillDownChart (interactive)
+    var groupByHeat = "GROUP BY data->>'" + ddEntity + "', data->>'" + ddLabel + "'" +
+      (ddDim !== ddLabel ? ", data->>'" + ddDim + "'" : "")
+
+    var subquery = "SELECT data->>'" + ddEntity + "' FROM dataset_rows " +
+      "WHERE dataset_id = " + datasetId + " AND " + f.curCond + CF +
+      " AND data->>'" + ddEntity + "' IS NOT NULL " +
+      "GROUP BY data->>'" + ddEntity + "' " +
+      "ORDER BY AVG(COALESCE((data->>'" + ddMetric + "')::numeric, 0)) DESC " +
+      "LIMIT " + ddTopN
+
+    var heatSQL = "SELECT data->>'" + ddEntity + "' AS label, " +
+      "data->>'" + ddLabel + "' AS slot, " +
+      (ddDim !== ddLabel ? "data->>'" + ddDim + "' AS slot_sort, " : "data->>'" + ddLabel + "' AS slot_sort, ") +
+      "AVG(COALESCE((data->>'" + ddMetric + "')::numeric, 0)) AS current_value " +
+      base + " AND data->>'" + ddEntity + "' IN (" + subquery + ") " +
+      groupByHeat + " ORDER BY data->>'" + ddEntity + "', " + safeIntOrder(ddDim)
+
     queries.push({
-      id: 'intent_heatmap_'+ddEntity+'_'+ddDim,
-      title: 'Top '+ddTopN+' '+eDisp+'s — '+ddMDisp+' by '+ddDisp,
-      chart_type: 'drilldown',
-      sql: 'SELECT data->>''+ddEntity+'' AS label, data->>''+ddLabel+'' AS slot, data->>''+ddDim+'' AS slot_sort, AVG(COALESCE((data->>''+ddMetric+'')::numeric, 0)) AS current_value '+base+' AND data->>''+ddEntity+'' IN (SELECT data->>''+ddEntity+'' FROM dataset_rows WHERE dataset_id = '+datasetId+' AND '+f.curCond+CF+' AND data->>''+ddEntity+'' IS NOT NULL GROUP BY data->>''+ddEntity+'' ORDER BY AVG(COALESCE((data->>''+ddMetric+'')::numeric, 0)) DESC LIMIT '+ddTopN+') GROUP BY data->>''+ddEntity+'', data->>''+ddLabel+'', data->>''+ddDim+'' ORDER BY data->>''+ddEntity+'', '+safeIntOrder(ddDim),
-      current_key: 'current_value', value_key: 'current_value', label_key: 'label',
-      slot_key: 'slot', slot_sort_key: 'slot_sort',
-      entity_display: eDisp, slot_display: ddDisp, metric_display: ddMDisp, unit: '',
-      insight: 'Click any branch to see its '+ddDisp.toLowerCase()+' stress pattern.',
-      priority: 53, intent_generated: true,
+      id:               "intent_heatmap_" + ddEntity + "_" + ddDim,
+      title:            "Top " + ddTopN + " " + ddEDisp + "s — " + ddMDisp + " by " + ddDisp,
+      chart_type:       "drilldown",
+      sql:              heatSQL,
+      current_key:      "current_value",
+      value_key:        "current_value",
+      label_key:        "label",
+      slot_key:         "slot",
+      slot_sort_key:    "slot_sort",
+      entity_display:   ddEDisp,
+      slot_display:     ddDisp,
+      metric_display:   ddMDisp,
+      unit:             "",
+      insight:          "Click any " + ddEDisp.toLowerCase() + " to see its " + ddDisp.toLowerCase() + " breakdown.",
+      priority:         53,
+      intent_generated: true,
     })
   }
 
-  if (intent.type === 'distribution') {
-    var distDim    = intent.distribution_dimension || 'Stress Type'
-    var distMetric = intent.distribution_metric    || 'bfi_2_score'
+  // ── DISTRIBUTION ─────────────────────────────────────────────────────────
+  if (intent.type === "distribution") {
+    var distDim    = intent.distribution_dimension || "Stress Type"
+    var distMetric = intent.distribution_metric    || "bfi_2_score"
+
+    var distSQL = "SELECT data->>'" + distDim + "' AS label, COUNT(*) AS current_value " +
+      base + " AND data->>'" + distDim + "' IS NOT NULL AND data->>'" + distDim + "' != '' " +
+      "GROUP BY data->>'" + distDim + "' ORDER BY current_value DESC"
+
     queries.push({
-      id: 'intent_distribution_'+distDim.replace(/\s+/g,'_'), title: 'Distribution by '+distDim, chart_type: 'donut',
-      sql: 'SELECT data->>''+distDim+'' AS label, COUNT(*) AS current_value '+base+' AND data->>''+distDim+'' IS NOT NULL AND data->>''+distDim+'' != '' GROUP BY data->>''+distDim+'' ORDER BY current_value DESC',
-      current_key: 'current_value', value_key: 'current_value', label_key: 'label', unit: 'count',
-      insight: 'Spread of records across each '+distDim+' category.', priority: 50, intent_generated: true,
+      id:               "intent_dist_" + distDim.replace(/\s+/g, "_"),
+      title:            "Distribution by " + distDim,
+      chart_type:       "donut",
+      sql:              distSQL,
+      current_key:      "current_value",
+      value_key:        "current_value",
+      label_key:        "label",
+      unit:             "count",
+      insight:          "Spread of records across each " + distDim + " category.",
+      priority:         50,
+      intent_generated: true,
     })
+
+    var distBarSQL = "SELECT data->>'" + distDim + "' AS label, " +
+      "AVG(COALESCE((data->>'" + distMetric + "')::numeric, 0)) AS current_value " +
+      base + " AND data->>'" + distDim + "' IS NOT NULL " +
+      "GROUP BY data->>'" + distDim + "' ORDER BY current_value DESC"
+
     queries.push({
-      id: 'intent_distribution_bar_'+distDim.replace(/\s+/g,'_'), title: 'Avg '+distMetric+' by '+distDim, chart_type: 'bar',
-      sql: 'SELECT data->>''+distDim+'' AS label, AVG(COALESCE((data->>''+distMetric+'')::numeric, 0)) AS current_value '+base+' AND data->>''+distDim+'' IS NOT NULL GROUP BY data->>''+distDim+'' ORDER BY current_value DESC',
-      current_key: 'current_value', value_key: 'current_value', label_key: 'label', unit: '',
-      insight: 'Average '+distMetric+' per '+distDim+' category.', priority: 51, intent_generated: true,
+      id:               "intent_dist_bar_" + distDim.replace(/\s+/g, "_"),
+      title:            "Avg " + distMetric + " by " + distDim,
+      chart_type:       "bar",
+      sql:              distBarSQL,
+      current_key:      "current_value",
+      value_key:        "current_value",
+      label_key:        "label",
+      unit:             "",
+      insight:          "Average " + distMetric + " for each " + distDim + " category.",
+      priority:         51,
+      intent_generated: true,
     })
   }
 
-  if (intent.type === 'temporal') {
-    var timeDim   = intent.time_dimension   || 'interval_sort_order'
+  // ── TEMPORAL ─────────────────────────────────────────────────────────────
+  if (intent.type === "temporal") {
+    var timeDim   = intent.time_dimension   || "interval_sort_order"
     var timeLabel = intent.time_label_field || timeDim
-    var timeMet   = intent.temporal_metric  || 'bfi_2_score'
+    var timeMet   = intent.temporal_metric  || "bfi_2_score"
+
+    var groupByTemporal = timeDim !== timeLabel
+      ? "GROUP BY data->>'" + timeLabel + "', data->>'" + timeDim + "'"
+      : "GROUP BY data->>'" + timeLabel + "'"
+
+    var temporalSQL = "SELECT data->>'" + timeLabel + "' AS label, " +
+      "AVG(COALESCE((data->>'" + timeMet + "')::numeric, 0)) AS current_value, " +
+      "COUNT(*) AS record_count " +
+      base + " AND data->>'" + timeLabel + "' IS NOT NULL " +
+      groupByTemporal + " ORDER BY " + safeIntOrder(timeDim)
+
     queries.push({
-      id: 'intent_temporal_'+timeDim, title: timeMet+' Pattern by '+(timeLabel!==timeDim?timeLabel:timeDim), chart_type: 'area',
-      sql: 'SELECT data->>''+timeLabel+'' AS label, AVG(COALESCE((data->>''+timeMet+'')::numeric, 0)) AS current_value, COUNT(*) AS record_count '+base+' AND data->>''+timeLabel+'' IS NOT NULL GROUP BY data->>''+timeLabel+'''+(timeDim!==timeLabel?', data->>''+timeDim+''':'')+' ORDER BY '+safeIntOrder(timeDim),
-      current_key: 'current_value', value_key: 'current_value', label_key: 'label', unit: '',
-      insight: 'How '+timeMet+' evolves across each '+timeLabel+'. Peaks reveal the highest-stress time slots.',
-      priority: 50, intent_generated: true,
+      id:               "intent_temporal_" + timeDim,
+      title:            timeMet + " Pattern by " + (timeLabel !== timeDim ? timeLabel : timeDim),
+      chart_type:       "area",
+      sql:              temporalSQL,
+      current_key:      "current_value",
+      value_key:        "current_value",
+      label_key:        "label",
+      unit:             "",
+      insight:          "How " + timeMet + " evolves across each " + timeLabel + ". Peaks reveal the highest-stress slots.",
+      priority:         50,
+      intent_generated: true,
     })
   }
 
@@ -417,6 +529,7 @@ function buildIntentQueries(intent, datasetId, f, CF) {
 }
 
 // ── Main route handler ────────────────────────────────────────────────────────
+
 export async function POST(request) {
   var apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) return Response.json({ error: 'OPENAI_API_KEY is not set.' }, { status: 500 })
@@ -534,16 +647,14 @@ export async function POST(request) {
   var tplBar = "SELECT data->>'__DIM__' AS label, SUM(CASE WHEN " + f.curCond + " THEN COALESCE((data->>'__KPI__')::numeric,0) ELSE 0 END) AS current_value, SUM(CASE WHEN " + f.cmpCond + " THEN COALESCE((data->>'__KPI__')::numeric,0) ELSE 0 END) AS comparison_value FROM dataset_rows WHERE dataset_id = " + datasetId + CF + " GROUP BY label ORDER BY current_value DESC LIMIT 10"
 
 
-  // T-BAR-PIT: for point_in_time KPIs — uses latest-month-only conditions.
-  // Prevents QTD/YTD from summing Jan+Feb stress scores into a meaningless total.
-  // Shows the as-of-month snapshot value per segment, not a period accumulation.
+  // T-BAR-PIT: point_in_time bar — as-of month snapshot per segment (not full period sum)
   var tplBarPIT = "SELECT data->>'__DIM__' AS label, " +
     "AVG(CASE WHEN " + f.curCondPIT + " THEN COALESCE((data->>'__KPI__')::numeric,0) ELSE NULL END) AS current_value, " +
     "AVG(CASE WHEN " + f.cmpCondPIT + " THEN COALESCE((data->>'__KPI__')::numeric,0) ELSE NULL END) AS comparison_value " +
     "FROM dataset_rows WHERE dataset_id = " + datasetId + CF +
     " GROUP BY label ORDER BY current_value DESC LIMIT 10"
 
-  // T-PIE-PIT: point_in_time donut/pie — as-of-month snapshot per category
+  // T-PIE-PIT: point_in_time pie/donut — as-of month snapshot per category
   var tplPiePIT = "SELECT data->>'__DIM__' AS label, " +
     "AVG(CASE WHEN " + f.curCondPIT + " THEN COALESCE((data->>'__KPI__')::numeric,0) ELSE NULL END) AS value " +
     "FROM dataset_rows WHERE dataset_id = " + datasetId + CF +
@@ -598,9 +709,7 @@ export async function POST(request) {
       ? 'KPI focus fields: ' + userContext.kpi_focus.join(', ') + ' — PRIORITISE these in chart selection and KPI cards. Allocate at least 60% of chart slots to these KPIs and their breakdowns. Other KPIs may still appear but should receive fewer chart slots.'
       : '',
     userContext.intent && userContext.intent.type
-      ? 'User intent: ' + userContext.intent.type + ' — ' + (userContext.intent.summary || '') +
-        '. NOTE: Intent-specific queries are appended automatically after your output. ' +
-        'Do NOT generate a separate ranking chart for ' + (userContext.intent.primary_entity || 'the same entity') + ' — that is handled by intent queries.'
+      ? 'User intent: ' + userContext.intent.type + ' — ' + (userContext.intent.summary || '') + '. NOTE: Intent-specific queries are appended automatically. Do NOT generate a ranking chart for ' + (userContext.intent.primary_entity || 'the same entity') + '.'
       : '',
     'NOTE: All SQL templates already include the context filter — do NOT add extra WHERE conditions for the filter.',
     '',
@@ -612,39 +721,23 @@ export async function POST(request) {
     'T-COUNT-DISTINCT (KPI card, count distinct at latest month): ' + tplCountDistinct,
     'T-COUNT-DISTINCT-BAR (bar with count distinct): ' + tplCountDistinctBar,
     'T-BAR (grouped bar, cumulative KPIs): ' + tplBar,
-    'T-BAR-PIT (grouped bar, point_in_time KPIs — latest month per segment): ' + tplBarPIT,
+    'T-BAR-PIT (grouped bar, point_in_time KPIs — as-of month per segment): ' + tplBarPIT,
     'T-LINE (trend line): ' + tplLine,
-    'T-PIE (pie/donut, cumulative KPIs): ' + tplPie,
-    'T-PIE-PIT (pie/donut, point_in_time KPIs — latest month snapshot): ' + tplPiePIT,
-    'T-SCATTER (scatter, cumulative KPIs): ' + tplScatter,
-    'T-SCATTER-PIT (scatter, point_in_time KPIs — latest month only): ' + tplScatterPIT,
+    'T-PIE (pie/donut, cumulative): ' + tplPie,
+    'T-PIE-PIT (pie/donut, point_in_time — as-of month snapshot): ' + tplPiePIT,
+    'T-SCATTER (scatter, cumulative): ' + tplScatter,
+    'T-SCATTER-PIT (scatter, point_in_time — as-of month only): ' + tplScatterPIT,
     'T-AREA (area chart): ' + tplArea,
     '',
     '## ACCUMULATION TYPE — CRITICAL FOR ALL QUERY TYPES',
-    'accumulation_type must be checked for EVERY query — KPI cards AND charts.',
-    '',
-    'KPI CARDS:',
-    '  cumulative    → T-SUM  (things that add up: revenue, fees, transaction count)',
-    '  point_in_time → T-PIT  (snapshots: stress score, NPA ratio, deposit balance)',
-    '',
-    'BAR CHARTS:',
-    '  cumulative    → T-BAR      (uses curCond / cmpCond — full period range)',
-    '  point_in_time → T-BAR-PIT  (uses curCondPIT / cmpCondPIT — latest month only per segment)',
-    '  WRONG: T-BAR for bfi_2_score in QTD Jan-Feb would show Branch A avg of (Jan+Feb)/2 months aggregated.',
-    '  RIGHT: T-BAR-PIT shows Branch A avg for Feb only — the correct as-of-month stress snapshot.',
-    '',
-    'PIE/DONUT CHARTS:',
-    '  cumulative    → T-PIE',
-    '  point_in_time → T-PIE-PIT',
-    '',
-    'SCATTER CHARTS:',
-    '  If BOTH KPIs are point_in_time → T-SCATTER-PIT',
-    '  Otherwise → T-SCATTER',
-    '',
-    'LINE/AREA CHARTS: always use __AGG__ = AVG for point_in_time, SUM for cumulative.',
-    '  Line/area group by month naturally — each point is already a monthly snapshot.',
-    '',
-    'RULE: check accumulation_type for every KPI before choosing a template.',
+    'Check accumulation_type for EVERY query — KPI cards AND charts.',
+    'KPI CARDS: cumulative → T-SUM | point_in_time → T-PIT',
+    'BAR CHARTS: cumulative → T-BAR | point_in_time → T-BAR-PIT (as-of month snapshot per segment)',
+    'PIE/DONUT:  cumulative → T-PIE | point_in_time → T-PIE-PIT',
+    'SCATTER:    cumulative → T-SCATTER | point_in_time → T-SCATTER-PIT',
+    'LINE/AREA:  use __AGG__=AVG for point_in_time, SUM for cumulative — each monthly point is naturally a snapshot.',
+    'WRONG: T-BAR for a point_in_time KPI in QTD would mix months — use T-BAR-PIT instead.',
+    'RIGHT: T-BAR-PIT uses the as-of month only, so each bar shows the correct period-end snapshot.',
     '',
     '## FIELD CATALOGUE',
     'KPI fields: ' + JSON.stringify(fieldList(topKpis)),
@@ -683,7 +776,7 @@ export async function POST(request) {
     '',
       '  CHART TYPE RULES:',
     '    bar         → compare a KPI across categories (use highest-CV dimension)',
-    '                  Use T-BAR for cumulative KPIs. Use T-BAR-PIT for point_in_time KPIs.',
+    '                  Use T-BAR for cumulative KPIs, T-BAR-PIT for point_in_time KPIs.',
     '                  MANDATORY: bar charts MUST include comparison_key: "comparison_value" in the output JSON.',
     '                  MANDATORY: bar chart SQL MUST include the comparison_value column using the cmpCond.',
     '                  A bar chart without comparison bars is useless — always show current vs prior.',
