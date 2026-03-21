@@ -16,6 +16,14 @@ export async function POST(request) {
   var yf               = body.yearField  || 'year'
   var mf               = body.monthField || 'month'
   var fiscal           = /fiscal/i.test(yf)
+  // QTD/MTD period filter — passed from TrendExplorer when a period is active
+  // For point_in_time KPIs in QTD/MTD, each monthly point is already a snapshot
+  // so we don't restrict the trend to the quarter — we show the full historical
+  // trend but use AVG (not SUM) so each monthly data point is the correct snapshot.
+  // The period label in TrendExplorer communicates the QTD context to the user.
+  var viewType         = body.viewType || 'YTD'
+  var periodMonthMin   = body.periodMonthMin   || null  // for QTD/MTD filtering if needed
+  var periodMonthMax   = body.periodMonthMax   || null
 
   if (!datasetId || !fieldName) {
     return Response.json({ error: 'datasetId and fieldName are required.' }, { status: 400 })
