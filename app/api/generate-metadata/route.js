@@ -40,7 +40,7 @@ export async function POST(request) {
 
   // Sample up to 50 rows for analysis — enough for the LLM to infer types
   var sampleRows = await query(
-    'SELECT data FROM dataset_rows WHERE dataset_id = $1 LIMIT 50',
+    'SELECT data FROM dataset_rows WHERE dataset_id = $1 LIMIT 20',
     [datasetId]
   )
   if (!sampleRows.length) return Response.json({ error: 'Dataset has no rows.' }, { status: 400 })
@@ -144,7 +144,7 @@ export async function POST(request) {
     },
     body: JSON.stringify({
       model:           'gpt-4o',
-      max_tokens:      4000,
+      max_tokens:      8000,
       temperature:     0.1,
       response_format: { type: 'json_object' },
       messages: [
