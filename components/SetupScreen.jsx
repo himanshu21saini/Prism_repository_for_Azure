@@ -1171,8 +1171,8 @@ export default function SetupScreen({ onReady }) {
 // Displays a subtle "need help?" prompt that expands into a call-to-action
 // with the VAPI phone number. Replace VAPI_PHONE_NUMBER with your actual number.
 
-var VAPI_PHONE_NUMBER = '+1 (XXX) XXX-XXXX'   // ← replace with your VAPI number
-var VAPI_PHONE_HREF   = 'tel:+1XXXXXXXXXX'     // ← replace with dialable version
+var VAPI_PHONE_NUMBER = '+1 (908) 800-7447'   // ← replace with your VAPI number
+var VAPI_PHONE_HREF   = 'tel:+19088007447'     // ← replace with dialable version
 
 function VapiHelpWidget() {
   var [expanded, setExpanded] = useState(false)
