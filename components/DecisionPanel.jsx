@@ -21,116 +21,6 @@ function effortBadge(effort) {
   return                          { bg: 'rgba(224,85,85,0.08)',   border: 'rgba(224,85,85,0.2)',   text: '#E05555' }
 }
 
-// ── Health Score Ring ─────────────────────────────────────────────────────────
-function ScoreRing({ score, size = 56, strokeWidth = 5, color }) {
-  var r   = (size - strokeWidth * 2) / 2
-  var circ = 2 * Math.PI * r
-  var dash = (score / 100) * circ
-
-  return (
-    <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
-      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={strokeWidth} />
-      <circle
-        cx={size/2} cy={size/2} r={r}
-        fill="none"
-        stroke={color}
-        strokeWidth={strokeWidth}
-        strokeLinecap="round"
-        strokeDasharray={circ}
-        strokeDashoffset={circ - dash}
-        style={{ transition: 'stroke-dashoffset 0.8s ease' }}
-      />
-    </svg>
-  )
-}
-
-function scoreColor(score) {
-  if (score >= 75) return '#10C48A'
-  if (score >= 50) return '#F0A030'
-  return '#E05555'
-}
-
-function HealthCard({ health }) {
-  if (!health) return null
-  var overall = health.overall || 0
-  var dims    = ['profitability', 'risk', 'growth', 'efficiency']
-
-  return (
-    <div style={{
-      background: 'linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%)',
-      border: '1px solid var(--border)',
-      borderRadius: 'var(--radius-lg)',
-      padding: '20px 24px',
-      marginBottom: 12,
-      backdropFilter: 'blur(8px)',
-      position: 'relative',
-      overflow: 'hidden',
-    }}>
-      {/* Top accent */}
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '1px', background: 'linear-gradient(90deg, ' + scoreColor(overall) + ', transparent)', opacity: 0.4 }} />
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 20 }}>
-        {/* Overall ring */}
-        <div style={{ position: 'relative', flexShrink: 0 }}>
-          <ScoreRing score={overall} size={72} strokeWidth={6} color={scoreColor(overall)} />
-          <div style={{
-            position: 'absolute', inset: 0,
-            display: 'flex', flexDirection: 'column',
-            alignItems: 'center', justifyContent: 'center',
-          }}>
-            <span style={{ fontSize: 18, fontWeight: 600, color: scoreColor(overall), fontFamily: 'var(--font-display)', letterSpacing: '-0.02em', lineHeight: 1 }}>{overall}</span>
-            <span style={{ fontSize: 8, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: 'var(--font-body)' }}>score</span>
-          </div>
-        </div>
-
-        <div>
-          <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'var(--font-display)', letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 4 }}>
-            Portfolio Health
-          </p>
-          <p style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', lineHeight: 1.5 }}>
-            Composite score across profitability, risk, growth, and efficiency
-          </p>
-        </div>
-      </div>
-
-      {/* Sub-scores grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        {dims.map(function(dim) {
-          var d     = health[dim]
-          if (!d) return null
-          var color = scoreColor(d.score || 0)
-          return (
-            <div key={dim} style={{
-              background: 'var(--bg)',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-md)',
-              padding: '10px 14px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 12,
-            }}>
-              <div style={{ position: 'relative', flexShrink: 0 }}>
-                <ScoreRing score={d.score || 0} size={36} strokeWidth={3.5} color={color} />
-                <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <span style={{ fontSize: 10, fontWeight: 600, color: color, fontFamily: 'var(--font-mono)' }}>{d.score}</span>
-                </div>
-              </div>
-              <div>
-                <p style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'capitalize', letterSpacing: '0.06em', fontFamily: 'var(--font-body)', marginBottom: 2 }}>
-                  {dim}
-                </p>
-                <p style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', lineHeight: 1.4 }}>
-                  {d.label}
-                </p>
-              </div>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
 // ── Decision Card ─────────────────────────────────────────────────────────────
 function DecisionCard({ decision, index, whatif }) {
   var [expanded, setExpanded] = useState(index === 0)
@@ -373,9 +263,6 @@ export default function DecisionPanel({ result, state, error }) {
         {/* Content */}
         {state === 'done' && displayed && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {/* Health card */}
-            <HealthCard health={displayed.health} />
-
             {/* Section header */}
             {displayed.decisions && displayed.decisions.length > 0 && (
               <p style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.14em', color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginTop: 4, marginBottom: 2 }}>
