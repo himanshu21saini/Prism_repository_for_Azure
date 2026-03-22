@@ -52,9 +52,57 @@ export async function POST(request) {
     })
     .filter(Boolean)
 
+  // Pre-process chart data into structured dimensional signals.
+  // Raw rows are not useful to the LLM — compute top/bottom segments,
+  // change leaders/laggards, and outliers so the LLM can reason directly.
   var chartResults = queryResults
     .filter(function(r) { return r.chart_type !== 'kpi' && r.chart_type !== 'area' && r.chart_type !== 'line' && !r.error && r.data && r.data.length })
-    .map(function(r) { return { title: r.title, chart_type: r.chart_type, data: r.data.slice(0, 20) } })
+    .map(function(r) {
+      var rows    = r.data.slice(0, 20)
+      var curKey  = r.current_key  || r.value_key  || 'current_value'
+      var cmpKey  = r.comparison_key || 'comparison_value'
+      var labelKey = r.label_key || 'label'
+
+      // Compute per-row change and sort
+      var enriched = rows.map(function(row) {
+        var cur  = parseFloat(row[curKey])
+        var cmp  = parseFloat(row[cmpKey])
+        var chg  = (!isNaN(cur) && !isNaN(cmp) && cmp !== 0)
+          ? parseFloat(((cur - cmp) / Math.abs(cmp) * 100).toFixed(1))
+          : null
+        return { segment: row[labelKey], current: isNaN(cur) ? null : cur, previous: isNaN(cmp) ? null : cmp, change_pct: chg }
+      }).filter(function(r) { return r.current !== null })
+
+      if (!enriched.length) return null
+
+      // Sort by current value
+      var sorted  = enriched.slice().sort(function(a, b) { return (b.current || 0) - (a.current || 0) })
+      var top     = sorted[0]
+      var bottom  = sorted[sorted.length - 1]
+
+      // Find biggest mover (most positive and most negative change)
+      var withChange = enriched.filter(function(r) { return r.change_pct !== null })
+      var biggestGainer  = withChange.length ? withChange.slice().sort(function(a,b){ return (b.change_pct||0)-(a.change_pct||0) })[0] : null
+      var biggestDecline = withChange.length ? withChange.slice().sort(function(a,b){ return (a.change_pct||0)-(b.change_pct||0) })[0] : null
+
+      // Compute avg to find outliers
+      var avg = enriched.reduce(function(s,r){ return s + (r.current||0) }, 0) / enriched.length
+
+      return {
+        title:           r.title,
+        chart_type:      r.chart_type,
+        unit:            r.unit || '',
+        segment_count:   enriched.length,
+        top_segment:     top    ? { name: top.segment,    value: top.current,    change_pct: top.change_pct }    : null,
+        bottom_segment:  bottom ? { name: bottom.segment, value: bottom.current, change_pct: bottom.change_pct } : null,
+        biggest_gainer:  biggestGainer  ? { name: biggestGainer.segment,  change_pct: biggestGainer.change_pct  } : null,
+        biggest_decline: biggestDecline ? { name: biggestDecline.segment, change_pct: biggestDecline.change_pct } : null,
+        average_value:   parseFloat(avg.toFixed(2)),
+        top_vs_bottom_ratio: bottom && bottom.current && bottom.current !== 0 ? parseFloat((top.current / bottom.current).toFixed(2)) : null,
+        all_segments:    sorted.slice(0, 10),   // max 10 for context
+      }
+    })
+    .filter(Boolean)
 
   var metaSummary = (metadata || []).map(function(m) {
     return {
@@ -83,8 +131,11 @@ export async function POST(request) {
     + '\n\nKPI SNAPSHOT (point-in-time):\n'
     + JSON.stringify(kpiResults, null, 2)
     + trendSection
-    + '\n\nCHART DATA (dimension breakdowns):\n'
+    + '\n\nDIMENSIONAL BREAKDOWNS (pre-computed insights from bar/pie charts):\n'
     + JSON.stringify(chartResults, null, 2)
+    + '\n\nIMPORTANT: The dimensional breakdowns above are just as important as the KPI snapshot.\n'
+    + 'For each chart: reference the top and bottom segments, the biggest gainer/decliner, and any outlier segments.\n'
+    + 'Do not write a generic summary — name specific segments and their values.\n'
     + '\n\nMETADATA:\n'
     + JSON.stringify(metaSummary, null, 2)
     + '\n\nRULES:\n'
@@ -108,8 +159,8 @@ export async function POST(request) {
     + '  ],\n'
     + '  "narrative": {\n'
     + '    "overall_performance": "One headline sentence mentioning the exact time period and comparison.",\n'
-    + '    "key_highlights": ["Highlight 1 with actual numbers", "Highlight 2", "Highlight 3"],\n'
-    + '    "areas_of_attention": ["Concern 1 with context", "Concern 2 if applicable"],\n'
+    + '    "key_highlights": ["At least 2 highlights MUST reference dimensional breakdowns — e.g. which region/product/segment is leading or lagging, with specific numbers"],\n'
+    + '    "areas_of_attention": ["At least 1 concern MUST reference a specific segment from the dimensional data — e.g. a declining region or underperforming product"],\n'
     + '    "closing_insight": "One forward-looking sentence referencing the trend observed."\n'
     + '  }\n'
     + '}\n\n'
