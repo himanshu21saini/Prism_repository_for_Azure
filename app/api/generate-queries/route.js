@@ -328,7 +328,11 @@ function buildIntentQueries(intent, datasetId, f, CF, metaRows) {
   // Uses the metadata aggregation column if available.
   // Falls back to AVG for point_in_time and SUM for cumulative.
   function aggFn(fieldName) {
-    var meta = metaRows && metaRows.find(function(m) { return m.field_name === fieldName })
+    // Case-insensitive match — LLM may extract 'revenue' when metadata has 'Revenue'
+    var normalised = (fieldName || '').toLowerCase()
+    var meta = metaRows && metaRows.find(function(m) {
+      return (m.field_name || '').toLowerCase() === normalised
+    })
     if (meta) {
       var agg = (meta.aggregation || '').toUpperCase()
       if (agg === 'SUM')            return 'SUM'
