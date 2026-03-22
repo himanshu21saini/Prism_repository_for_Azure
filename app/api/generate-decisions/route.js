@@ -93,9 +93,49 @@ export async function POST(request) {
   var chartSummary = queryResults
     .filter(function(r) { return r.chart_type !== 'kpi' && r.chart_type !== 'area' && r.chart_type !== 'line' && !r.error && r.data && r.data.length })
     .map(function(r) {
-      var top = r.data.slice(0, 5)
-      return { title: r.title, chart_type: r.chart_type, top_rows: top }
+      var rows     = r.data.slice(0, 20)
+      var curKey   = r.current_key  || r.value_key  || 'current_value'
+      var cmpKey   = r.comparison_key || 'comparison_value'
+      var labelKey = r.label_key || 'label'
+
+      var enriched = rows.map(function(row) {
+        var cur = parseFloat(row[curKey])
+        var cmp = parseFloat(row[cmpKey])
+        var chg = (!isNaN(cur) && !isNaN(cmp) && cmp !== 0)
+          ? parseFloat(((cur - cmp) / Math.abs(cmp) * 100).toFixed(1)) : null
+        return { segment: row[labelKey], current: isNaN(cur) ? null : cur, previous: isNaN(cmp) ? null : cmp, change_pct: chg }
+      }).filter(function(r) { return r.current !== null })
+
+      if (!enriched.length) return null
+
+      var sorted         = enriched.slice().sort(function(a, b) { return (b.current||0) - (a.current||0) })
+      var withChange     = enriched.filter(function(r) { return r.change_pct !== null })
+      var biggestGainer  = withChange.length ? withChange.slice().sort(function(a,b){ return (b.change_pct||0)-(a.change_pct||0) })[0] : null
+      var biggestDecline = withChange.length ? withChange.slice().sort(function(a,b){ return (a.change_pct||0)-(b.change_pct||0) })[0] : null
+      var avg            = enriched.reduce(function(s,r){ return s+(r.current||0) }, 0) / enriched.length
+
+      // Flag outliers — segments more than 30% above or below average
+      var outliers = enriched.filter(function(r) {
+        return avg > 0 && Math.abs((r.current - avg) / avg) > 0.3
+      }).map(function(r) {
+        return { segment: r.segment, pct_vs_avg: parseFloat(((r.current - avg) / avg * 100).toFixed(1)) }
+      })
+
+      return {
+        title:           r.title,
+        chart_type:      r.chart_type,
+        unit:            r.unit || '',
+        segment_count:   enriched.length,
+        top_segment:     sorted[0]                   ? { name: sorted[0].segment,    value: sorted[0].current,    change_pct: sorted[0].change_pct }    : null,
+        bottom_segment:  sorted[sorted.length - 1]  ? { name: sorted[sorted.length-1].segment, value: sorted[sorted.length-1].current, change_pct: sorted[sorted.length-1].change_pct } : null,
+        biggest_gainer:  biggestGainer  ? { name: biggestGainer.segment,  change_pct: biggestGainer.change_pct  } : null,
+        biggest_decline: biggestDecline ? { name: biggestDecline.segment, change_pct: biggestDecline.change_pct } : null,
+        outlier_segments: outliers,
+        average_value:   parseFloat(avg.toFixed(2)),
+        all_segments:    sorted.slice(0, 10),
+      }
     })
+    .filter(Boolean)
 
   var metaSummary = (metadata || [])
     .filter(function(m) { return m.is_output !== 'N' })
@@ -132,7 +172,8 @@ export async function POST(request) {
       ? JSON.stringify(trendSummary, null, 2)
       : '(no trend data available — user has not opened Trend Explorer yet)',
     '',
-    '## CHART DATA (dimension breakdowns)',
+    '## DIMENSIONAL BREAKDOWN SIGNALS (pre-computed from bar/pie/scatter charts)',
+    '(Each entry shows top/bottom segments, biggest movers, and outliers — use these to generate dimensional decisions)',
     JSON.stringify(chartSummary, null, 2),
     '',
     '## FIELD METADATA',
@@ -148,17 +189,27 @@ export async function POST(request) {
     'NEVER flag an improving trend as a risk. ALWAYS use favorable_direction to determine what is "worse".',
     '',
     'STEP 1 — ANOMALY SCAN',
-    'For every KPI: compare current vs previous and vs benchmark.',
+    'Scan ALL data — KPIs AND dimensional chart breakdowns.',
+    '',
+    'For KPIs: compare current vs previous and vs benchmark.',
     'Use favorable_direction from metadata to determine if a change is good or bad.',
     'Flag anything that is:',
-    '  - More than 10% WORSE than prior period (apply favorable_direction to determine worse)',
+    '  - More than 10% WORSE than prior period',
     '  - Breaching its benchmark in the wrong direction',
     '  - Showing an accelerating unfavorable trend',
-    '  - Showing a long-run deterioration in the unfavorable direction',
+    '',
+    'For DIMENSIONAL CHARTS: scan every chart breakdown for:',
+    '  - Any segment with biggest_decline — flag if > 10% decline',
+    '  - Any outlier_segment with pct_vs_avg < -30% (badly underperforming peers)',
+    '  - Large top_vs_bottom disparity suggesting concentration risk or inequality',
+    '  - A top_segment or bottom_segment changing rank vs prior period',
+    'Dimensional anomalies are just as decision-worthy as KPI anomalies.',
     '',
     'STEP 2 — DECISION RECOMMENDATIONS',
-    'For each significant signal, produce ONE clear decision card.',
+    'For each significant signal — from KPIs OR dimensional charts — produce ONE clear decision card.',
     'A decision card must answer: What is the problem? What should I do? Why? What happens if I ignore it?',
+    'AT LEAST 2 of the 5 decisions must be driven by dimensional chart data (e.g. a specific region, product, or segment).',
+    'Name the specific segment, dimension value, and exact number in each decision.',
     'Rank by urgency (1 = most urgent). Max 5 decisions.',
     '',
     'STEP 3 — WHAT-IF PREVIEW',
