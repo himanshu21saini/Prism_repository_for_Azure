@@ -112,13 +112,15 @@ export async function POST(request) {
     .filter(function(m) { return m.is_output !== 'N' })
     .map(function(m) {
       return {
-        field:        m.field_name,
-        display:      m.display_name,
-        type:         m.type,
-        unit:         m.unit || '',
-        definition:   m.definition || '',
-        aggregation:  m.aggregation || '',
-        accumulation: m.accumulation_type || '',
+        field:              m.field_name,
+  display:            m.display_name,
+  type:               m.type,
+  unit:               m.unit || '',
+  definition:         m.definition || '',
+  aggregation:        m.aggregation || '',
+  accumulation:       m.accumulation_type || '',
+  business_priority:  m.business_priority || '',
+  favorable_direction: m.favorable_direction || '',
       }
     })
 
@@ -151,6 +153,11 @@ export async function POST(request) {
     '## FIELD CATALOGUE',
     JSON.stringify(metaSummary, null, 2),
     '',
+    '## FIELD PRIORITY',
+'Each field in the catalogue has a business_priority (high/medium/low) and favorable_direction (i=increase good, d=decrease good).',
+'When the question is ambiguous about which KPI to use, prefer fields with business_priority = "high".',
+'When writing the insight field, frame changes correctly using favorable_direction — a rising cost (d) is bad, a rising revenue (i) is good.',
+'',
     '## SQL RULES',
     '1. All field access: data->>\'field_name\' (exact case from catalogue)',
     '2. Numeric cast: COALESCE((data->>\'field\')::numeric, 0)',
