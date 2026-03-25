@@ -704,8 +704,9 @@ export default function Dashboard({ session }) {
   }}
   renderChart={renderChart}
         questionSQLs={questionSQLCache}
-  onQuestionQueries={function(qs) {
+ onQuestionQueries={function(qs) {
     setQuestionSQLCache(function(prev) { return prev.concat(qs) })
+  }}
 />
       )}
 
