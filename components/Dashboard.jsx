@@ -116,11 +116,14 @@ export default function Dashboard({ session }) {
   var [narrative,    setNarrative]    = useState(null)
   var [summaryError, setSummaryError] = useState('')
 
-  var [decisionState, setDecisionState] = useState('idle')
+  var [decisionState,  setDecisionState]  = useState('idle')
   var [decisionResult, setDecisionResult] = useState(null)
   var [decisionError,  setDecisionError]  = useState('')
 
   var [whatifQuery, setWhatifQuery] = useState(null)
+
+  // ── FIX 1: questionSQLCache for Query Inspector ──────────────────────────
+  var [questionSQLCache, setQuestionSQLCache] = useState([])
 
   var [tokenCalls, setTokenCalls] = useState(function() {
     if (session.initialUsage) {
@@ -131,9 +134,6 @@ export default function Dashboard({ session }) {
 
   var [trendDataCache, setTrendDataCache] = useState({})
   var [trendSQLCache,  setTrendSQLCache]  = useState({})
-
-  // ── FIX 1: state for question SQLs to show in Query Inspector ──
-  var [questionSQLCache, setQuestionSQLCache] = useState([])
 
   function handleTrendData(fieldName, data, meta, sql) {
     setTrendDataCache(function(prev) {
@@ -234,9 +234,7 @@ export default function Dashboard({ session }) {
     } catch (err) { setSummaryError(err.message); setSummaryState('error') }
   }
 
-  function handlePrint() {
-    window.print()
-  }
+  function handlePrint() { window.print() }
 
   function handleScrollToQuestion() {
     if (questionPanelRef.current) {
@@ -301,10 +299,7 @@ export default function Dashboard({ session }) {
               <XAxis dataKey={labelKey} tick={axStyle} angle={-35} textAnchor="end" interval={0} axisLine={false} tickLine={false} />
               <YAxis tick={axStyle} width={52} tickFormatter={fmt} axisLine={false} tickLine={false} />
               <Tooltip contentStyle={ttStyle} formatter={function(v, n) { return [fmt(v) + (result.unit ? ' ' + result.unit : ''), n] }} />
-              <Legend
-                verticalAlign="top" align="right"
-                wrapperStyle={{ fontSize: 10, paddingBottom: 4, fontFamily: "'Plus Jakarta Sans', system-ui", color: '#3D6080', top: 0 }}
-              />
+              <Legend verticalAlign="top" align="right" wrapperStyle={{ fontSize: 10, paddingBottom: 4, fontFamily: "'Plus Jakarta Sans', system-ui", color: '#3D6080', top: 0 }} />
               {hasComp && (
                 <Bar dataKey={cmpKey} name={periodInfo.cmpLabel || 'Prior period'} fill={colorC} stroke={color} strokeWidth={0.5} radius={[2,2,0,0]} maxBarSize={22}>
                   <LabelList dataKey={cmpKey} position="top" formatter={fmt} style={{ fontSize: 8, fill: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }} />
@@ -329,10 +324,7 @@ export default function Dashboard({ session }) {
               <XAxis dataKey={labelKey} tick={axStyle} angle={-35} textAnchor="end" interval={0} axisLine={false} tickLine={false} />
               <YAxis tick={axStyle} width={52} tickFormatter={fmt} axisLine={false} tickLine={false} />
               <Tooltip contentStyle={ttStyle} formatter={function(v, n) { return [fmt(v) + (result.unit ? ' ' + result.unit : ''), n] }} />
-              <Legend
-                verticalAlign="top" align="right"
-                wrapperStyle={{ fontSize: 10, paddingBottom: 4, fontFamily: "'Plus Jakarta Sans', system-ui", color: '#3D6080', top: 0 }}
-              />
+              <Legend verticalAlign="top" align="right" wrapperStyle={{ fontSize: 10, paddingBottom: 4, fontFamily: "'Plus Jakarta Sans', system-ui", color: '#3D6080', top: 0 }} />
               {seriesKeys.map(function(sk, si) {
                 var isLast = si === seriesKeys.length - 1
                 return (
@@ -366,7 +358,6 @@ export default function Dashboard({ session }) {
           }) || keys[1]
         }
       }
-
       var pieData = data
         .map(function(r) {
           var row = Object.assign({}, r)
@@ -374,7 +365,6 @@ export default function Dashboard({ session }) {
           return row
         })
         .filter(function(r) { return r[pieValueKey] > 0 && r[pieLabelKey] })
-
       return (
         <ChartCard key={result.id} title={result.title} insight={insight} index={idx} onSimulate={onSimulate}>
           <ResponsiveContainer width="100%" height={280}>
@@ -430,11 +420,9 @@ export default function Dashboard({ session }) {
   return (
     <div style={{ maxWidth: 1320, margin: '0 auto', padding: '28px 28px 80px' }}>
 
-      {/* ── Period Banner ─────────────────────────────────────────── */}
+      {/* ── Period Banner ── */}
       {periodInfo.viewLabel && (
         <div className="fade-in" style={{ marginBottom: 24 }}>
-
-          {/* Top row: title + buttons */}
           <div style={{ display: 'flex', alignItems: 'center' }}>
             <div style={{ flex: 1 }}>
               <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
@@ -465,129 +453,32 @@ export default function Dashboard({ session }) {
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
 
-              {/* 1 — Generate Summary */}
               {prefs.summary !== false && (
-              <button
-                onClick={handleGenerateSummary}
-                disabled={summaryState === 'loading'}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px',
-                  background: summaryState === 'loading' ? 'transparent' : 'linear-gradient(135deg, rgba(0,200,240,0.15) 0%, rgba(43,127,227,0.1) 100%)',
-                  border: '1px solid ' + (summaryState === 'loading' ? 'var(--border)' : 'var(--accent-border)'),
-                  borderRadius: 'var(--radius-md)',
-                  fontSize: 11, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase',
-                  color: summaryState === 'loading' ? 'var(--text-tertiary)' : 'var(--text-accent)',
-                  cursor: summaryState === 'loading' ? 'not-allowed' : 'pointer',
-                  fontFamily: 'var(--font-display)', transition: 'all var(--transition)',
-                  boxShadow: summaryState === 'loading' ? 'none' : '0 0 16px rgba(0,200,240,0.08)',
-                }}
-              >
-                {summaryState === 'loading'
-                  ? <><span className="spinner" /> Composing...</>
-                  : <>{summaryState === 'done' ? 'Regenerate Summary' : 'Generate Summary'}</>
-                }
-              </button>
+                <button onClick={handleGenerateSummary} disabled={summaryState === 'loading'} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', background: summaryState === 'loading' ? 'transparent' : 'linear-gradient(135deg, rgba(0,200,240,0.15) 0%, rgba(43,127,227,0.1) 100%)', border: '1px solid ' + (summaryState === 'loading' ? 'var(--border)' : 'var(--accent-border)'), borderRadius: 'var(--radius-md)', fontSize: 11, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: summaryState === 'loading' ? 'var(--text-tertiary)' : 'var(--text-accent)', cursor: summaryState === 'loading' ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', transition: 'all var(--transition)', boxShadow: summaryState === 'loading' ? 'none' : '0 0 16px rgba(0,200,240,0.08)' }}>
+                  {summaryState === 'loading' ? <><span className="spinner" /> Composing...</> : <>{summaryState === 'done' ? 'Regenerate Summary' : 'Generate Summary'}</>}
+                </button>
               )}
 
-              {/* 2 — Generate Decisions */}
               {prefs.decisions !== false && (
-              <button
-                onClick={handleGenerateDecisions}
-                disabled={decisionState === 'loading'}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px',
-                  background: decisionState === 'loading' ? 'transparent' : 'linear-gradient(135deg, rgba(123,143,240,0.18) 0%, rgba(83,74,183,0.12) 100%)',
-                  border: '1px solid ' + (decisionState === 'loading' ? 'var(--border)' : 'rgba(123,143,240,0.4)'),
-                  borderRadius: 'var(--radius-md)',
-                  fontSize: 11, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase',
-                  color: decisionState === 'loading' ? 'var(--text-tertiary)' : '#7B8FF0',
-                  cursor: decisionState === 'loading' ? 'not-allowed' : 'pointer',
-                  fontFamily: 'var(--font-display)', transition: 'all var(--transition)',
-                  boxShadow: decisionState === 'loading' ? 'none' : '0 0 16px rgba(123,143,240,0.1)',
-                }}
-              >
-                {decisionState === 'loading'
-                  ? <><span className="spinner" /> Analysing...</>
-                  : <>{decisionState === 'done' ? 'Refresh Decisions' : 'Generate Decisions'}</>
-                }
-              </button>
+                <button onClick={handleGenerateDecisions} disabled={decisionState === 'loading'} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', background: decisionState === 'loading' ? 'transparent' : 'linear-gradient(135deg, rgba(123,143,240,0.18) 0%, rgba(83,74,183,0.12) 100%)', border: '1px solid ' + (decisionState === 'loading' ? 'var(--border)' : 'rgba(123,143,240,0.4)'), borderRadius: 'var(--radius-md)', fontSize: 11, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: decisionState === 'loading' ? 'var(--text-tertiary)' : '#7B8FF0', cursor: decisionState === 'loading' ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', transition: 'all var(--transition)', boxShadow: decisionState === 'loading' ? 'none' : '0 0 16px rgba(123,143,240,0.1)' }}>
+                  {decisionState === 'loading' ? <><span className="spinner" /> Analysing...</> : <>{decisionState === 'done' ? 'Refresh Decisions' : 'Generate Decisions'}</>}
+                </button>
               )}
 
-              {/* Divider + Print to PDF icon button */}
               <div style={{ width: 1, height: 20, background: 'var(--border)', flexShrink: 0 }} />
-              <button
-                onClick={handlePrint}
-                title="Print / Save as PDF"
-                className="prism-print-hide"
-                style={{
-                  width: 36, height: 36,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: 'var(--surface-2)',
-                  border: '1px solid rgba(0,180,160,0.25)',
-                  borderRadius: 'var(--radius-md)',
-                  color: '#00B4A0',
-                  cursor: 'pointer',
-                  transition: 'all var(--transition)',
-                  flexShrink: 0, padding: 0,
-                }}
-                onMouseEnter={function(e) {
-                  e.currentTarget.style.background   = 'rgba(0,180,160,0.1)'
-                  e.currentTarget.style.borderColor  = 'rgba(0,180,160,0.5)'
-                  e.currentTarget.style.boxShadow    = '0 0 10px rgba(0,180,160,0.15)'
-                }}
-                onMouseLeave={function(e) {
-                  e.currentTarget.style.background  = 'var(--surface-2)'
-                  e.currentTarget.style.borderColor = 'rgba(0,180,160,0.25)'
-                  e.currentTarget.style.boxShadow   = 'none'
-                }}
-              >
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                  <path d="M3 5V2h8v3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-                  <path d="M3 9H1.5A.5.5 0 0 1 1 8.5v-3A.5.5 0 0 1 1.5 5h11a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-.5.5H11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-                  <rect x="3" y="8" width="8" height="5" rx="0.5" stroke="currentColor" strokeWidth="1.3"/>
-                  <circle cx="11" cy="7" r="0.6" fill="currentColor"/>
-                </svg>
+              <button onClick={handlePrint} title="Print / Save as PDF" className="prism-print-hide" style={{ width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-2)', border: '1px solid rgba(0,180,160,0.25)', borderRadius: 'var(--radius-md)', color: '#00B4A0', cursor: 'pointer', transition: 'all var(--transition)', flexShrink: 0, padding: 0 }} onMouseEnter={function(e) { e.currentTarget.style.background = 'rgba(0,180,160,0.1)'; e.currentTarget.style.borderColor = 'rgba(0,180,160,0.5)'; e.currentTarget.style.boxShadow = '0 0 10px rgba(0,180,160,0.15)' }} onMouseLeave={function(e) { e.currentTarget.style.background = 'var(--surface-2)'; e.currentTarget.style.borderColor = 'rgba(0,180,160,0.25)'; e.currentTarget.style.boxShadow = 'none' }}>
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 5V2h8v3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/><path d="M3 9H1.5A.5.5 0 0 1 1 8.5v-3A.5.5 0 0 1 1.5 5h11a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-.5.5H11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/><rect x="3" y="8" width="8" height="5" rx="0.5" stroke="currentColor" strokeWidth="1.3"/><circle cx="11" cy="7" r="0.6" fill="currentColor"/></svg>
               </button>
 
-              {/* Ask a Question button */}
               <div style={{ width: 1, height: 20, background: 'var(--border)', flexShrink: 0 }} />
-              <button
-                onClick={handleScrollToQuestion}
-                title="Ask a question about your data"
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  padding: '8px 14px',
-                  background: 'linear-gradient(135deg, rgba(155,127,227,0.14) 0%, rgba(103,74,183,0.1) 100%)',
-                  border: '1px solid rgba(155,127,227,0.35)',
-                  borderRadius: 'var(--radius-md)',
-                  color: '#B8A0F0',
-                  cursor: 'pointer',
-                  fontSize: 11, fontWeight: 600,
-                  fontFamily: 'var(--font-display)',
-                  letterSpacing: '0.08em', textTransform: 'uppercase',
-                  transition: 'all var(--transition)', flexShrink: 0,
-                }}
-                onMouseEnter={function(e) {
-                  e.currentTarget.style.background  = 'rgba(155,127,227,0.22)'
-                  e.currentTarget.style.boxShadow   = '0 0 12px rgba(155,127,227,0.15)'
-                }}
-                onMouseLeave={function(e) {
-                  e.currentTarget.style.background  = 'linear-gradient(135deg, rgba(155,127,227,0.14) 0%, rgba(103,74,183,0.1) 100%)'
-                  e.currentTarget.style.boxShadow   = 'none'
-                }}
-              >
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                  <circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1.3"/>
-                  <path d="M4.5 4.5a1.5 1.5 0 0 1 3 0c0 1-1.5 1.5-1.5 2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-                  <circle cx="6" cy="9" r="0.6" fill="currentColor"/>
-                </svg>
+              <button onClick={handleScrollToQuestion} title="Ask a question about your data" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'linear-gradient(135deg, rgba(155,127,227,0.14) 0%, rgba(103,74,183,0.1) 100%)', border: '1px solid rgba(155,127,227,0.35)', borderRadius: 'var(--radius-md)', color: '#B8A0F0', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'var(--font-display)', letterSpacing: '0.08em', textTransform: 'uppercase', transition: 'all var(--transition)', flexShrink: 0 }} onMouseEnter={function(e) { e.currentTarget.style.background = 'rgba(155,127,227,0.22)'; e.currentTarget.style.boxShadow = '0 0 12px rgba(155,127,227,0.15)' }} onMouseLeave={function(e) { e.currentTarget.style.background = 'linear-gradient(135deg, rgba(155,127,227,0.14) 0%, rgba(103,74,183,0.1) 100%)'; e.currentTarget.style.boxShadow = 'none' }}>
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1.3"/><path d="M4.5 4.5a1.5 1.5 0 0 1 3 0c0 1-1.5 1.5-1.5 2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><circle cx="6" cy="9" r="0.6" fill="currentColor"/></svg>
                 Ask
               </button>
 
             </div>
           </div>
 
-          {/* Token meter */}
           {tokenCalls.length > 0 && (
             <div className="prism-print-hide" style={{ marginTop: 10 }}>
               <TokenMeter calls={tokenCalls} />
@@ -596,20 +487,16 @@ export default function Dashboard({ session }) {
         </div>
       )}
 
-      {/* ── Decision Intelligence ── */}
       {prefs.decisions !== false && decisionState !== 'idle' && (
         <DecisionPanel result={decisionResult} state={decisionState} error={decisionError} />
       )}
 
-      {/* ── Summary ── */}
       {prefs.summary !== false && summaryState !== 'idle' && (
         <SummaryPanel narrative={narrative} state={summaryState} error={summaryError} />
       )}
 
-      {/* Teal divider */}
       <div style={{ height: '1px', background: 'linear-gradient(90deg, var(--accent), rgba(43,127,227,0.3), transparent)', opacity: 0.3, marginBottom: 24 }} />
 
-      {/* ── KPI Cards ── */}
       {visibleKpis.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10, marginBottom: 20 }}>
           {visibleKpis.map(function(r, i) {
@@ -623,35 +510,24 @@ export default function Dashboard({ session }) {
         </div>
       )}
 
-      {/* Divider */}
       {(trendResults.length > 0 || chartResults.length > 0) && (
         <div style={{ height: '1px', background: 'linear-gradient(90deg, transparent, var(--accent), rgba(43,127,227,0.2), transparent)', opacity: 0.15, marginBottom: 20 }} />
       )}
 
-      {/* ── Trend Explorer ── */}
       {prefs.forecast !== false && (metadata || []).some(function(m) { return m.type === 'kpi' || m.type === 'derived_kpi' }) && (
-        <TrendExplorer
-          metadata={metadata}
-          datasetId={session.datasetId}
-          timePeriod={session.timePeriod}
-          onSimulate={function(q) { setWhatifQuery(q) }}
-          onTrendData={handleTrendData}
-        />
+        <TrendExplorer metadata={metadata} datasetId={session.datasetId} timePeriod={session.timePeriod} onSimulate={function(q) { setWhatifQuery(q) }} onTrendData={handleTrendData} />
       )}
 
-      {/* ── Drill-Down Panels ── */}
       {drillResults.map(function(result, idx) {
         return <DrillDownChart key={result.id} result={result} idx={idx} periodInfo={periodInfo} />
       })}
 
-      {/* ── Charts ── */}
       {chartResults.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
           {chartResults.map(function(result, idx) { return renderChart(result, idx) })}
         </div>
       )}
 
-      {/* ── Failed ── */}
       {failed.length > 0 && (
         <div style={{ background: 'var(--amber-light)', border: '1px solid rgba(240,160,48,0.2)', borderRadius: 'var(--radius-md)', padding: '12px 16px', marginBottom: 16 }}>
           <p style={{ fontSize: 12, color: 'var(--amber-text)', marginBottom: 4, fontFamily: 'var(--font-body)' }}>
@@ -661,53 +537,45 @@ export default function Dashboard({ session }) {
         </div>
       )}
 
-
-      {/* ── Query Inspector ───────────────────────────────────────────── */}
+      {/* ── Query Inspector ── */}
       {prefs.queryInspector !== false && (
-    <QueryInspector
-  queries={allQueries}
-  periodInfo={periodInfo}
-  trendSQLs={trendSQLCache}
-  questionPanelRef={questionPanelRef}
-  datasetId={session.datasetId}
-  metadata={metadata}
-  userContext={session.userContext}
-  onTokens={function(u) {
-    setTokenCalls(function(prev) {
-      return prev.concat([{ label: 'question', promptTokens: u.prompt_tokens, completionTokens: u.completion_tokens, model: u.model || 'gpt-4o' }])
-    })
-  }}
-  renderChart={renderChart}
-        questionSQLs={questionSQLCache}
- onQuestionQueries={function(qs) {
-    setQuestionSQLCache(function(prev) { return prev.concat(qs) })
-  }}
-/>
+        <QueryInspector
+          queries={allQueries}
+          periodInfo={periodInfo}
+          trendSQLs={trendSQLCache}
+          questionPanelRef={questionPanelRef}
+          datasetId={session.datasetId}
+          metadata={metadata}
+          userContext={session.userContext}
+          onTokens={function(u) {
+            setTokenCalls(function(prev) {
+              return prev.concat([{ label: 'question', promptTokens: u.prompt_tokens, completionTokens: u.completion_tokens, model: u.model || 'gpt-4o' }])
+            })
+          }}
+          renderChart={renderChart}
+          questionSQLs={questionSQLCache}
+          onQuestionQueries={function(qs) {
+            setQuestionSQLCache(function(prev) { return prev.concat(qs) })
+          }}
+        />
       )}
 
-      {/* ── Coverage Panel ────────────────────────────────────────────── */}
       {prefs.coveragePanel !== false && (
         <CoveragePanel coverageData={session.coverageData} />
       )}
 
-      {/* ── What-if Drawer ────────────────────────────────────────────── */}
-      <WhatIfDrawer
-        query={whatifQuery || {}}
-        metadata={metadata}
-        isOpen={!!whatifQuery}
-        onClose={function() { setWhatifQuery(null) }}
-      />
+      <WhatIfDrawer query={whatifQuery || {}} metadata={metadata} isOpen={!!whatifQuery} onClose={function() { setWhatifQuery(null) }} />
     </div>
   )
 }
 
+// ── QueryInspector ────────────────────────────────────────────────────────────
 function QueryInspector({ queries, periodInfo, trendSQLs, questionPanelRef, datasetId, metadata, userContext, onTokens, renderChart, questionSQLs, onQuestionQueries }) {
-
-  var [open, setOpen] = useState(false); var [expandedId, setExpandedId] = useState(null)
+  var [open, setOpen] = useState(false)
+  var [expandedId, setExpandedId] = useState(null)
   var trendEntries = Object.keys(trendSQLs || {}).map(function(k) { return Object.assign({ id: 'trend_' + k }, trendSQLs[k]) })
-  var total = (queries ? queries.length : 0) + trendEntries.length
+  var total = (queries ? queries.length : 0) + trendEntries.length + (questionSQLs ? questionSQLs.length : 0)
   if (!total) return null
-  var typeColor = { kpi: '#00C8F0', bar: '#10C48A', line: '#2B7FE3', area: '#2B7FE3', pie: '#9B7FE3', donut: '#9B7FE3', stacked_bar: '#10C48A', scatter: '#F0A030', trend: '#F0A030' }
 
   return (
     <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', marginBottom: 16, background: 'var(--surface)', backdropFilter: 'blur(8px)' }}>
@@ -727,8 +595,11 @@ function QueryInspector({ queries, periodInfo, trendSQLs, questionPanelRef, data
               {periodInfo.viewLabel} · {periodInfo.cmpLabel}
             </div>
           )}
+
+          {/* Main queries */}
           {(queries || []).map(function(q, idx) {
-            var isExpanded = expandedId === q.id; var tc = typeColor[q.chart_type] || '#8BB4D8'
+            var isExpanded = expandedId === q.id
+            var tc = { kpi: '#00C8F0', bar: '#10C48A', line: '#2B7FE3', area: '#2B7FE3', pie: '#9B7FE3', donut: '#9B7FE3', stacked_bar: '#10C48A', scatter: '#F0A030' }[q.chart_type] || '#8BB4D8'
             return (
               <div key={q.id} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
                 <button onClick={function() { setExpandedId(isExpanded ? null : q.id) }}
@@ -755,6 +626,8 @@ function QueryInspector({ queries, periodInfo, trendSQLs, questionPanelRef, data
               </div>
             )
           })}
+
+          {/* Trend Explorer queries */}
           {trendEntries.length > 0 && (
             <>
               <div style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: 'var(--font-mono)', padding: '4px 0 2px' }}>
@@ -781,51 +654,53 @@ function QueryInspector({ queries, periodInfo, trendSQLs, questionPanelRef, data
                   </div>
                 )
               })}
-              {questionSQLs && questionSQLs.length > 0 && (
-  <>
-    <div style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: 'var(--font-mono)', padding: '4px 0 2px' }}>
-      Ask a Question queries
-    </div>
-    {questionSQLs.map(function(q) {
-      var isExpanded = expandedId === q.id
-      return (
-        <div key={q.id} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
-          <button onClick={function() { setExpandedId(isExpanded ? null : q.id) }}
-            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', background: 'var(--surface-2)', border: 'none', cursor: 'pointer' }}>
-            <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 2, flexShrink: 0, background: 'transparent', color: '#B8A0F0', border: '1px solid rgba(155,127,227,0.3)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)' }}>ask</span>
-            <span style={{ fontSize: 12, color: 'var(--text-secondary)', flex: 1, textAlign: 'left', fontFamily: 'var(--font-body)' }}>{q.title}</span>
-            <span style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'inline-block', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'var(--transition)', flexShrink: 0 }}>▾</span>
-          </button>
-          {isExpanded && (
-            <div style={{ padding: '12px 14px', borderTop: '1px solid var(--border)' }}>
-              <pre style={{ fontFamily: 'var(--font-mono)', fontSize: 10, lineHeight: 1.7, color: 'var(--text-secondary)', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0 }}>
-                {(q.sql || '').replace(/\s+(SELECT|FROM|WHERE|AND|GROUP BY|ORDER BY|HAVING|LIMIT|LEFT JOIN)\s+/gi, function(m) { return '\n' + m.trim() + ' ' })}
-              </pre>
-              <CopyButton text={q.sql} />
-            </div>
-          )}
-        </div>
-      )
-    })}
-  </>
-)}
             </>
           )}
+
+          {/* ── FIX 1: Ask a Question queries ── */}
+          {questionSQLs && questionSQLs.length > 0 && (
+            <>
+              <div style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: 'var(--font-mono)', padding: '4px 0 2px' }}>
+                Ask a Question queries
+              </div>
+              {questionSQLs.map(function(q) {
+                var isExpanded = expandedId === q.id
+                return (
+                  <div key={q.id} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+                    <button onClick={function() { setExpandedId(isExpanded ? null : q.id) }}
+                      style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', background: 'var(--surface-2)', border: 'none', cursor: 'pointer' }}>
+                      <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 2, flexShrink: 0, background: 'transparent', color: '#B8A0F0', border: '1px solid rgba(155,127,227,0.3)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)' }}>ask</span>
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)', flex: 1, textAlign: 'left', fontFamily: 'var(--font-body)' }}>{q.title}</span>
+                      <span style={{ fontSize: 10, color: 'var(--text-tertiary)', display: 'inline-block', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'var(--transition)', flexShrink: 0 }}>▾</span>
+                    </button>
+                    {isExpanded && (
+                      <div style={{ padding: '12px 14px', borderTop: '1px solid var(--border)' }}>
+                        <pre style={{ fontFamily: 'var(--font-mono)', fontSize: 10, lineHeight: 1.7, color: 'var(--text-secondary)', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0 }}>
+                          {(q.sql || '').replace(/\s+(SELECT|FROM|WHERE|AND|GROUP BY|ORDER BY|HAVING|LIMIT|LEFT JOIN)\s+/gi, function(m) { return '\n' + m.trim() + ' ' })}
+                        </pre>
+                        <CopyButton text={q.sql} />
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </>
+          )}
+
+          {/* ── Question Panel ── */}
+          <QuestionPanel
+            panelRef={questionPanelRef}
+            datasetId={datasetId}
+            metadata={metadata}
+            periodInfo={periodInfo}
+            userContext={userContext}
+            onTokens={onTokens}
+            renderChart={renderChart}
+            onQuestionQueries={onQuestionQueries}
+          />
+
         </div>
       )}
-
-      {/* ── Question Panel ─────────────────────────────────────────────── */}
-      <QuestionPanel
-        panelRef={questionPanelRef}
-        datasetId={datasetId}
-        metadata={metadata}
-        periodInfo={periodInfo}
-        userContext={userContext}
-        onTokens={onTokens}
-        renderChart={renderChart}
-         onQuestionQueries={onQuestionQueries}
-      />
-
     </div>
   )
 }
@@ -841,11 +716,6 @@ function CopyButton({ text }) {
 }
 
 // ── DrillDownChart ────────────────────────────────────────────────────────────
-// Two-level interactive panel for intent heatmap queries.
-// Level 1: horizontal bar chart — one bar per entity (branch), sorted by avg score.
-// Level 2: click a branch → inline line chart showing its score across all intervals.
-// Data comes from a single query that has label (branch), slot (interval), current_value.
-
 function DrillDownChart({ result, idx, periodInfo }) {
   var [selected, setSelected] = useState(null)
 
@@ -858,7 +728,6 @@ function DrillDownChart({ result, idx, periodInfo }) {
   var slotDisp    = result.slot_display   || 'Time Slot'
   var metricDisp  = result.metric_display || 'Score'
 
-  // Derive branch-level aggregates for Level 1
   var branchMap = {}
   raw.forEach(function(row) {
     var branch = row[labelKey]
@@ -871,7 +740,6 @@ function DrillDownChart({ result, idx, periodInfo }) {
     .map(function(b) { return { label: b.label, avg: b.count ? b.total / b.count : 0 } })
     .sort(function(a, b) { return b.avg - a.avg })
 
-  // Derive interval rows for the selected branch
   var slotRows = []
   if (selected) {
     slotRows = raw
@@ -884,187 +752,80 @@ function DrillDownChart({ result, idx, periodInfo }) {
       })
   }
 
-  // Score → colour mapping (for bfi_2_score range 6-16)
   function scoreColor(v) {
-    if (v >= 14) return '#E05555'      // red — Ultra High
-    if (v >= 12) return '#F0A030'      // amber — High
-    if (v >= 10) return '#00C8F0'      // teal — Medium
-    return '#3D6080'                   // muted — Low
+    if (v >= 14) return '#E05555'
+    if (v >= 12) return '#F0A030'
+    if (v >= 10) return '#00C8F0'
+    return '#3D6080'
   }
 
   var maxAvg = branches.length ? branches[0].avg : 1
-
-  var ttStyle = {
-    background: '#0D1930', border: '1px solid rgba(0,200,240,0.2)',
-    borderRadius: 8, fontSize: 11, color: '#FFFFFF', padding: '8px 12px',
-    fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
-  }
-  var axStyle = { fontSize: 10, fill: '#3D6080', fontFamily: "'JetBrains Mono', monospace" }
-
-  function fmt(v) {
-    var n = parseFloat(v); if (isNaN(n)) return '—'
-    return n.toFixed(1)
-  }
+  var ttStyleLocal = { background: '#0D1930', border: '1px solid rgba(0,200,240,0.2)', borderRadius: 8, fontSize: 11, color: '#FFFFFF', padding: '8px 12px', fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif" }
+  var axStyleLocal = { fontSize: 10, fill: '#3D6080', fontFamily: "'JetBrains Mono', monospace" }
+  function fmtLocal(v) { var n = parseFloat(v); if (isNaN(n)) return '—'; return n.toFixed(1) }
 
   return (
-    <div className={'fade-up d' + Math.min(idx + 2, 6)} style={{
-      background: 'linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%)',
-      border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)',
-      marginBottom: 12, overflow: 'hidden',
-      transition: 'border-color var(--transition)',
-    }}>
-      {/* Top accent */}
+    <div className={'fade-up d' + Math.min(idx + 2, 6)} style={{ background: 'linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', marginBottom: 12, overflow: 'hidden', transition: 'border-color var(--transition)' }}>
       <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, var(--accent), transparent)', opacity: 0.25 }} />
 
-      {/* Header */}
       <div style={{ padding: '14px 18px 10px', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
         <div style={{ flex: 1 }}>
-          <p style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.12em', fontFamily: 'var(--font-body)', marginBottom: 2 }}>
-            {result.title}
-          </p>
+          <p style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.12em', fontFamily: 'var(--font-body)', marginBottom: 2 }}>{result.title}</p>
           <p style={{ fontSize: 11, color: 'rgba(56,180,220,0.5)', fontFamily: 'var(--font-body)' }}>
-            {selected
-              ? entityDisp + ' selected: ' + selected + ' — showing ' + slotDisp.toLowerCase() + ' breakdown'
-              : 'Click any ' + entityDisp.toLowerCase() + ' to drill into its ' + slotDisp.toLowerCase() + ' pattern'
-            }
+            {selected ? entityDisp + ' selected: ' + selected + ' — showing ' + slotDisp.toLowerCase() + ' breakdown' : 'Click any ' + entityDisp.toLowerCase() + ' to drill into its ' + slotDisp.toLowerCase() + ' pattern'}
           </p>
         </div>
         {selected && (
-          <button
-            onClick={function() { setSelected(null) }}
-            style={{
-              fontSize: 10, padding: '4px 10px', cursor: 'pointer',
-              background: 'var(--accent-dim)', border: '1px solid var(--accent-border)',
-              borderRadius: 'var(--radius-sm)', color: 'var(--text-accent)',
-              fontFamily: 'var(--font-mono)', letterSpacing: '0.06em',
-              flexShrink: 0,
-            }}
-          >
+          <button onClick={function() { setSelected(null) }} style={{ fontSize: 10, padding: '4px 10px', cursor: 'pointer', background: 'var(--accent-dim)', border: '1px solid var(--accent-border)', borderRadius: 'var(--radius-sm)', color: 'var(--text-accent)', fontFamily: 'var(--font-mono)', letterSpacing: '0.06em', flexShrink: 0 }}>
             ← All {entityDisp}s
           </button>
         )}
       </div>
 
-      {/* Level 1 — Branch ranking (always visible, selected branch highlighted) */}
       <div style={{ padding: '0 18px 14px' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
           {branches.map(function(b) {
             var isSelected = selected === b.label
-            var barPct     = maxAvg > 0 ? (b.avg / maxAvg) * 100 : 0
-            var color      = scoreColor(b.avg)
+            var barPct = maxAvg > 0 ? (b.avg / maxAvg) * 100 : 0
+            var color  = scoreColor(b.avg)
             return (
-              <div
-                key={b.label}
-                onClick={function() { setSelected(isSelected ? null : b.label) }}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 10,
-                  padding: '6px 10px', borderRadius: 'var(--radius-sm)',
-                  cursor: 'pointer',
-                  background: isSelected ? 'rgba(0,200,240,0.06)' : 'transparent',
-                  border: '1px solid ' + (isSelected ? 'var(--accent-border)' : 'transparent'),
-                  transition: 'all var(--transition)',
-                }}
+              <div key={b.label} onClick={function() { setSelected(isSelected ? null : b.label) }}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', background: isSelected ? 'rgba(0,200,240,0.06)' : 'transparent', border: '1px solid ' + (isSelected ? 'var(--accent-border)' : 'transparent'), transition: 'all var(--transition)' }}
                 onMouseEnter={function(e) { if (!isSelected) e.currentTarget.style.background = 'rgba(255,255,255,0.03)' }}
                 onMouseLeave={function(e) { if (!isSelected) e.currentTarget.style.background = 'transparent' }}
               >
-                {/* Branch label */}
-                <span style={{
-                  fontSize: 11, color: isSelected ? 'var(--text-accent)' : 'var(--text-secondary)',
-                  fontFamily: 'var(--font-body)', width: 80, flexShrink: 0,
-                  fontWeight: isSelected ? 600 : 400,
-                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                }}>
-                  {b.label}
-                </span>
-
-                {/* Bar */}
+                <span style={{ fontSize: 11, color: isSelected ? 'var(--text-accent)' : 'var(--text-secondary)', fontFamily: 'var(--font-body)', width: 80, flexShrink: 0, fontWeight: isSelected ? 600 : 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.label}</span>
                 <div style={{ flex: 1, height: 8, background: 'var(--surface-3)', borderRadius: 4, overflow: 'hidden' }}>
-                  <div style={{
-                    width: barPct + '%', height: '100%',
-                    background: color,
-                    borderRadius: 4,
-                    opacity: selected && !isSelected ? 0.35 : 0.85,
-                    transition: 'width 0.4s ease, opacity var(--transition)',
-                  }} />
+                  <div style={{ width: barPct + '%', height: '100%', background: color, borderRadius: 4, opacity: selected && !isSelected ? 0.35 : 0.85, transition: 'width 0.4s ease, opacity var(--transition)' }} />
                 </div>
-
-                {/* Score */}
-                <span style={{
-                  fontSize: 11, fontFamily: 'var(--font-mono)',
-                  color: color, width: 36, textAlign: 'right', flexShrink: 0,
-                  fontWeight: 600,
-                }}>
-                  {fmt(b.avg)}
-                </span>
-
-                {/* Drill indicator */}
-                <span style={{
-                  fontSize: 11, color: isSelected ? 'var(--text-accent)' : 'var(--text-tertiary)',
-                  flexShrink: 0,
-                }}>
-                  {isSelected ? '▾' : '▸'}
-                </span>
+                <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: color, width: 36, textAlign: 'right', flexShrink: 0, fontWeight: 600 }}>{fmtLocal(b.avg)}</span>
+                <span style={{ fontSize: 11, color: isSelected ? 'var(--text-accent)' : 'var(--text-tertiary)', flexShrink: 0 }}>{isSelected ? '▾' : '▸'}</span>
               </div>
             )
           })}
         </div>
       </div>
 
-      {/* Level 2 — Interval breakdown (shown below when a branch is selected) */}
       {selected && slotRows.length > 0 && (
-        <div style={{
-          borderTop: '1px solid var(--border)',
-          padding: '14px 18px 16px',
-          background: 'rgba(0,200,240,0.02)',
-        }}>
-          <p style={{
-            fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.14em',
-            color: 'var(--text-accent)', fontFamily: 'var(--font-body)', marginBottom: 12,
-          }}>
+        <div style={{ borderTop: '1px solid var(--border)', padding: '14px 18px 16px', background: 'rgba(0,200,240,0.02)' }}>
+          <p style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.14em', color: 'var(--text-accent)', fontFamily: 'var(--font-body)', marginBottom: 12 }}>
             {selected} — {metricDisp} by {slotDisp}
           </p>
-
           <ResponsiveContainer width="100%" height={180}>
             <LineChart data={slotRows} margin={{ top: 4, right: 8, left: 0, bottom: 40 }}>
               <CartesianGrid strokeDasharray="1 4" stroke="rgba(56,140,255,0.08)" vertical={false} />
-              <XAxis
-                dataKey="slot"
-                tick={axStyle}
-                angle={-40}
-                textAnchor="end"
-                interval={Math.max(0, Math.floor(slotRows.length / 8) - 1)}
-                axisLine={false}
-                tickLine={false}
-              />
-              <YAxis tick={axStyle} width={40} tickFormatter={fmt} axisLine={false} tickLine={false} />
-              <Tooltip
-                contentStyle={ttStyle}
-                formatter={function(v) { return [fmt(v), metricDisp] }}
-                labelFormatter={function(l) { return slotDisp + ': ' + l }}
-              />
-              <Line
-                type="monotone"
-                dataKey="value"
-                name={metricDisp}
-                stroke="var(--accent)"
-                strokeWidth={1.5}
+              <XAxis dataKey="slot" tick={axStyleLocal} angle={-40} textAnchor="end" interval={Math.max(0, Math.floor(slotRows.length / 8) - 1)} axisLine={false} tickLine={false} />
+              <YAxis tick={axStyleLocal} width={40} tickFormatter={fmtLocal} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={ttStyleLocal} formatter={function(v) { return [fmtLocal(v), metricDisp] }} labelFormatter={function(l) { return slotDisp + ': ' + l }} />
+              <Line type="monotone" dataKey="value" name={metricDisp} stroke="var(--accent)" strokeWidth={1.5}
                 dot={function(props) {
                   var cx = props.cx; var cy = props.cy; var val = props.payload.value
-                  return (
-                    <circle
-                      key={props.key || cx + '-' + cy}
-                      cx={cx} cy={cy} r={3}
-                      fill={scoreColor(val)}
-                      stroke="none"
-                    />
-                  )
+                  return <circle key={props.key || cx + '-' + cy} cx={cx} cy={cy} r={3} fill={scoreColor(val)} stroke="none" />
                 }}
                 activeDot={{ r: 5, fill: 'var(--accent)' }}
               />
             </LineChart>
           </ResponsiveContainer>
-
-          {/* Summary stats row */}
           <div style={{ display: 'flex', gap: 16, marginTop: 6, flexWrap: 'wrap' }}>
             {(function() {
               var vals = slotRows.map(function(r) { return r.value })
@@ -1072,9 +833,9 @@ function DrillDownChart({ result, idx, periodInfo }) {
               var peak = slotRows.reduce(function(a,b){return b.value>a.value?b:a}, slotRows[0])
               var low  = slotRows.reduce(function(a,b){return b.value<a.value?b:a}, slotRows[0])
               return [
-                { label: 'Avg', val: fmt(avg), color: 'var(--text-secondary)' },
-                { label: 'Peak slot', val: peak ? peak.slot + ' (' + fmt(peak.value) + ')' : '—', color: '#E05555' },
-                { label: 'Lowest slot', val: low  ? low.slot  + ' (' + fmt(low.value)  + ')' : '—', color: '#10C48A' },
+                { label: 'Avg', val: fmtLocal(avg), color: 'var(--text-secondary)' },
+                { label: 'Peak slot', val: peak ? peak.slot + ' (' + fmtLocal(peak.value) + ')' : '—', color: '#E05555' },
+                { label: 'Lowest slot', val: low ? low.slot + ' (' + fmtLocal(low.value) + ')' : '—', color: '#10C48A' },
               ].map(function(s) {
                 return (
                   <div key={s.label} style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
@@ -1092,76 +853,63 @@ function DrillDownChart({ result, idx, periodInfo }) {
 }
 
 // ── QuestionPanel ─────────────────────────────────────────────────────────────
-// Free-flowing question interface anchored at the bottom of the dashboard.
-// Each question generates its own charts + narrative answer block.
-// Context filters from setup always apply — cannot be overridden by questions.
-
 var QuestionPanel = function QuestionPanel(props) {
-  var ref = props.panelRef
-  var datasetId   = props.datasetId
-  var metadata    = props.metadata    || []
-  var periodInfo  = props.periodInfo  || {}
-  var userContext = props.userContext  || null
-  var onTokens    = props.onTokens    || function() {}
-  var renderChart = props.renderChart || function() { return null }
+  var ref               = props.panelRef
+  var datasetId         = props.datasetId
+  var metadata          = props.metadata          || []
+  var periodInfo        = props.periodInfo        || {}
+  var userContext       = props.userContext        || null
+  var onTokens          = props.onTokens          || function() {}
+  var renderChart       = props.renderChart       || function() { return null }
   var onQuestionQueries = props.onQuestionQueries || function() {}
-  var [question,  setQuestion]  = useState('')
-  var [loading,   setLoading]   = useState(false)
-  var [error,     setError]     = useState('')
-  var [answers,   setAnswers]   = useState([])   // array of answer blocks
-  var [expandedAnswerId, setExpandedAnswerId] = useState(null)
+
+  var [question,          setQuestion]          = useState('')
+  var [loading,           setLoading]           = useState(false)
+  var [error,             setError]             = useState('')
+  var [answers,           setAnswers]           = useState([])
+  // ── FIX 3: which answer block is expanded ────────────────────────────────
+  var [expandedAnswerId,  setExpandedAnswerId]  = useState(null)
+
   async function handleAsk() {
     var q = question.trim()
     if (!q || loading) return
     setLoading(true); setError('')
 
     try {
-      var res  = await fetch('/api/ask-question', {
+      var res = await fetch('/api/ask-question', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          question:    q,
-          datasetId:   datasetId,
-          metadata:    metadata,
-          periodInfo:  periodInfo,
-          userContext: userContext,
-        }),
+        body:    JSON.stringify({ question: q, datasetId: datasetId, metadata: metadata, periodInfo: periodInfo, userContext: userContext }),
       })
       var json = await res.json()
       if (!res.ok) throw new Error(json.error || 'Question failed.')
       if (json.usage) onTokens(json.usage)
-var newId = Date.now()
-setAnswers(function(prev) {
-  return [{
-    id:             Date.now(),
-    question:       q,
-    periodUsed:     json.periodUsed,
-    queries:        json.queries        || [],
-    narrative:      json.narrative,
-    dependentFields: json.dependentFields || [],
-  }].concat(prev)
-})
-      setExpandedAnswerId(newId)
-if (json.queries) {
-  onQuestionQueries(
-    json.queries
-      .filter(function(q) { return q.sql })
-      .map(function(q) { 
-        return { 
-          id:    q.id + '_' + Date.now(), 
-          title: q.title, 
-          sql:   q.sql 
-        } 
+
+      var newId = Date.now()
+
+      // ── FIX 2: prepend — newest question on top ──────────────────────────
+      setAnswers(function(prev) {
+        return [{
+          id:              newId,
+          question:        q,
+          periodUsed:      json.periodUsed,
+          queries:         json.queries        || [],
+          narrative:       json.narrative,
+          dependentFields: json.dependentFields || [],
+        }].concat(prev)
       })
-  )
-}
- if (json.queries) {
-  var qs = json.queries.filter(function(q) { return q.sql }).map(function(q) {
-    return { id: q.id + '_' + Date.now(), title: q.title, sql: q.sql }
-  })
-  console.log('=== onQuestionQueries firing with', qs.length, 'queries')
-  onQuestionQueries(qs)
-}     
+
+      // ── FIX 3: auto-expand newest, collapse others ───────────────────────
+      setExpandedAnswerId(newId)
+
+      // ── FIX 1: send SQLs up to Query Inspector ───────────────────────────
+      if (json.queries) {
+        var qs = json.queries
+          .filter(function(qItem) { return qItem.sql })
+          .map(function(qItem) { return { id: qItem.id + '_' + newId, title: qItem.title, sql: qItem.sql } })
+        if (qs.length) onQuestionQueries(qs)
+      }
+
       setQuestion('')
     } catch(err) {
       setError(err.message)
@@ -1178,12 +926,7 @@ if (json.queries) {
 
       {/* Section header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-        <div style={{
-          width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
-          background: 'linear-gradient(135deg, rgba(155,127,227,0.2), rgba(103,74,183,0.1))',
-          border: '1px solid rgba(155,127,227,0.3)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
+        <div style={{ width: 28, height: 28, borderRadius: '50%', flexShrink: 0, background: 'linear-gradient(135deg, rgba(155,127,227,0.2), rgba(103,74,183,0.1))', border: '1px solid rgba(155,127,227,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <svg width="13" height="13" viewBox="0 0 12 12" fill="none">
             <circle cx="6" cy="6" r="5" stroke="#B8A0F0" strokeWidth="1.3"/>
             <path d="M4.5 4.5a1.5 1.5 0 0 1 3 0c0 1-1.5 1.5-1.5 2.5" stroke="#B8A0F0" strokeWidth="1.3" strokeLinecap="round"/>
@@ -1191,12 +934,8 @@ if (json.queries) {
           </svg>
         </div>
         <div>
-          <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'var(--font-display)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-            Ask a Question
-          </p>
-          <p style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginTop: 1 }}>
-            Ask anything about your data · Context from setup always applies · ⌘↵ to submit
-          </p>
+          <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'var(--font-display)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Ask a Question</p>
+          <p style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginTop: 1 }}>Ask anything about your data · Context from setup always applies · ⌘↵ to submit</p>
         </div>
       </div>
 
@@ -1208,49 +947,19 @@ if (json.queries) {
           onKeyDown={handleKeyDown}
           placeholder="e.g. Which branch had the highest BFI score in Feb 2026? Why did Branch_2 decline?"
           rows={2}
-          style={{
-            flex: 1,
-            padding: '10px 14px',
-            background: 'var(--surface-2)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-md)',
-            color: 'var(--text-primary)',
-            fontSize: 12,
-            fontFamily: 'var(--font-body)',
-            lineHeight: 1.5,
-            resize: 'vertical',
-            outline: 'none',
-            transition: 'border-color var(--transition)',
-          }}
+          style={{ flex: 1, padding: '10px 14px', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', color: 'var(--text-primary)', fontSize: 12, fontFamily: 'var(--font-body)', lineHeight: 1.5, resize: 'vertical', outline: 'none', transition: 'border-color var(--transition)' }}
           onFocus={function(e) { e.target.style.borderColor = 'rgba(155,127,227,0.5)' }}
           onBlur={function(e)  { e.target.style.borderColor = 'var(--border)' }}
         />
         <button
           onClick={handleAsk}
           disabled={!question.trim() || loading}
-          style={{
-            padding: '0 20px',
-            background: !question.trim() || loading
-              ? 'transparent'
-              : 'linear-gradient(135deg, rgba(155,127,227,0.2) 0%, rgba(103,74,183,0.14) 100%)',
-            border: '1px solid ' + (!question.trim() || loading ? 'var(--border)' : 'rgba(155,127,227,0.4)'),
-            borderRadius: 'var(--radius-md)',
-            color: !question.trim() || loading ? 'var(--text-tertiary)' : '#B8A0F0',
-            cursor: !question.trim() || loading ? 'not-allowed' : 'pointer',
-            fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-display)',
-            letterSpacing: '0.08em', textTransform: 'uppercase',
-            display: 'flex', alignItems: 'center', gap: 7,
-            transition: 'all var(--transition)', flexShrink: 0, alignSelf: 'stretch',
-          }}
+          style={{ padding: '0 20px', background: !question.trim() || loading ? 'transparent' : 'linear-gradient(135deg, rgba(155,127,227,0.2) 0%, rgba(103,74,183,0.14) 100%)', border: '1px solid ' + (!question.trim() || loading ? 'var(--border)' : 'rgba(155,127,227,0.4)'), borderRadius: 'var(--radius-md)', color: !question.trim() || loading ? 'var(--text-tertiary)' : '#B8A0F0', cursor: !question.trim() || loading ? 'not-allowed' : 'pointer', fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-display)', letterSpacing: '0.08em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 7, transition: 'all var(--transition)', flexShrink: 0, alignSelf: 'stretch' }}
         >
-          {loading
-            ? <><span className="spinner" style={{ borderTopColor: '#B8A0F0', borderColor: 'var(--border)', width: 12, height: 12, borderWidth: 1.5 }} /> Thinking...</>
-            : 'Ask'
-          }
+          {loading ? <><span className="spinner" style={{ borderTopColor: '#B8A0F0', borderColor: 'var(--border)', width: 12, height: 12, borderWidth: 1.5 }} /> Thinking...</> : 'Ask'}
         </button>
       </div>
 
-      {/* Error */}
       {error && (
         <p style={{ fontSize: 11, color: 'var(--red-text)', background: 'var(--red-light)', padding: '7px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(224,85,85,0.2)', marginBottom: 12, fontFamily: 'var(--font-body)' }}>
           {error}
@@ -1259,144 +968,102 @@ if (json.queries) {
 
       {/* Answer blocks */}
       {answers.map(function(ans) {
+        var isExpanded = expandedAnswerId === ans.id   // ── FIX 3
         return (
-          <div key={ans.id} className="fade-in" style={{
-            marginTop: 20,
-            background: 'linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%)',
-            border: '1px solid rgba(155,127,227,0.2)',
-            borderRadius: 'var(--radius-lg)',
-            overflow: 'hidden',
-          }}>
+          <div key={ans.id} className="fade-in" style={{ marginTop: 20, background: 'linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%)', border: '1px solid rgba(155,127,227,0.2)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+
             {/* Top accent */}
             <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, rgba(155,127,227,0.5), transparent)' }} />
 
-            {/* Question header */}
-              <div
-                onClick={function() { setExpandedAnswerId(isExpanded ? null : ans.id) }}
-                style={{ padding: '14px 20px 12px', borderBottom: isExpanded ? '1px solid var(--border)' : 'none', cursor: 'pointer' }}
-              >
+            {/* Question header — clickable ── FIX 3 */}
+            <div
+              onClick={function() { setExpandedAnswerId(isExpanded ? null : ans.id) }}
+              style={{ padding: '14px 20px 12px', borderBottom: isExpanded ? '1px solid var(--border)' : 'none', cursor: 'pointer' }}
+            >
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                <span style={{
-                  fontSize: 9, padding: '2px 7px', borderRadius: 3, flexShrink: 0, marginTop: 2,
-                  background: 'rgba(155,127,227,0.12)', color: '#B8A0F0',
-                  border: '1px solid rgba(155,127,227,0.25)',
-                  fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600,
-                }}>Q</span>
-                <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', fontFamily: 'var(--font-body)', lineHeight: 1.5, flex: 1 }}>
-                  {ans.question}
-                </p>
-                <span style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', flexShrink: 0, marginTop: 2 }}>
-                  {ans.periodUsed}
-                </span>
-                          <span style={{
-            fontSize: 10, color: 'var(--text-tertiary)', flexShrink: 0,
-            marginTop: 2, display: 'inline-block',
-            transform: isExpanded ? 'rotate(180deg)' : 'none',
-            transition: 'transform var(--transition)',
-          }}>▾</span>
+                <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 3, flexShrink: 0, marginTop: 2, background: 'rgba(155,127,227,0.12)', color: '#B8A0F0', border: '1px solid rgba(155,127,227,0.25)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>Q</span>
+                <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', fontFamily: 'var(--font-body)', lineHeight: 1.5, flex: 1 }}>{ans.question}</p>
+                <span style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', flexShrink: 0, marginTop: 2 }}>{ans.periodUsed}</span>
+                <span style={{ fontSize: 10, color: 'var(--text-tertiary)', flexShrink: 0, marginTop: 2, display: 'inline-block', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform var(--transition)' }}>▾</span>
               </div>
             </div>
-            {isExpanded && (<>
-            {/* Charts */}
-            {ans.queries.filter(function(q) { return !q.error && q.data && q.data.length }).length > 0 && (
-              <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: ans.queries.filter(function(q){ return !q.error && q.data && q.data.length }).length === 1 ? '1fr' : '1fr 1fr', gap: 12 }}>
-                  {ans.queries
-                    .filter(function(q) { return !q.error && q.data && q.data.length })
-                    .map(function(q, i) { return renderChart(q, i) })
-                  }
-                </div>
-              </div>
-            )}
 
-            {/* Failed queries notice */}
-            {ans.queries.filter(function(q) { return !!q.error }).map(function(q, i) {
-              return (
-                <div key={i} style={{ padding: '8px 20px', background: 'rgba(224,85,85,0.04)', borderBottom: '1px solid rgba(224,85,85,0.1)' }}>
-                  <p style={{ fontSize: 10, color: 'var(--red-text)', fontFamily: 'var(--font-mono)' }}>
-                    {q.title}: {q.error}
-                  </p>
-                </div>
-              )
-            })}
-
-            {/* Narrative */}
-            {ans.narrative && (
-              <div style={{ padding: '16px 20px' }}>
-
-                {/* Answer */}
-                <div style={{ marginBottom: 14 }}>
-                  <p style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#B8A0F0', fontFamily: 'var(--font-body)', marginBottom: 6 }}>
-                    Answer
-                  </p>
-                  <p style={{ fontSize: 13, color: 'var(--text-primary)', fontFamily: 'var(--font-body)', lineHeight: 1.7 }}>
-                    {ans.narrative.answer}
-                  </p>
-                </div>
-
-                {/* Key findings */}
-                {ans.narrative.key_findings && ans.narrative.key_findings.length > 0 && (
-                  <div style={{ marginBottom: 14 }}>
-                    <p style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginBottom: 6 }}>
-                      Key Findings
-                    </p>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                      {ans.narrative.key_findings.map(function(f, i) {
-                        return (
-                          <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                            <span style={{ color: '#B8A0F0', flexShrink: 0, marginTop: 1 }}>·</span>
-                            <p style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'var(--font-body)', lineHeight: 1.55 }}>{f}</p>
-                          </div>
-                        )
-                      })}
+            {/* Body — only when expanded ── FIX 3 */}
+            {isExpanded && (
+              <>
+                {/* Charts */}
+                {ans.queries.filter(function(q) { return !q.error && q.data && q.data.length }).length > 0 && (
+                  <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: ans.queries.filter(function(q){ return !q.error && q.data && q.data.length }).length === 1 ? '1fr' : '1fr 1fr', gap: 12 }}>
+                      {ans.queries.filter(function(q) { return !q.error && q.data && q.data.length }).map(function(q, i) { return renderChart(q, i) })}
                     </div>
                   </div>
                 )}
 
-                {/* Drivers */}
-                {ans.narrative.drivers && (
-                  <div style={{
-                    background: 'rgba(155,127,227,0.06)', border: '1px solid rgba(155,127,227,0.15)',
-                    borderRadius: 'var(--radius-sm)', padding: '10px 14px', marginBottom: 14,
-                  }}>
-                    <p style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#B8A0F0', fontFamily: 'var(--font-body)', marginBottom: 5 }}>
-                      What's Driving This
-                    </p>
-                    <p style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'var(--font-body)', lineHeight: 1.6 }}>
-                      {ans.narrative.drivers}
-                    </p>
-                  </div>
-                )}
-
-                {/* Investigate */}
-                {ans.narrative.investigate && ans.narrative.investigate.length > 0 && (
-                  <div style={{
-                    background: 'rgba(240,160,48,0.05)', border: '1px solid rgba(240,160,48,0.15)',
-                    borderRadius: 'var(--radius-sm)', padding: '10px 14px', marginBottom: ans.narrative.data_limitation ? 12 : 0,
-                  }}>
-                    <p style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#F0A030', fontFamily: 'var(--font-body)', marginBottom: 6 }}>
-                      Investigate Further
-                    </p>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      {ans.narrative.investigate.map(function(item, i) {
-                        return (
-                          <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                            <span style={{ color: '#F0A030', flexShrink: 0, fontFamily: 'var(--font-mono)', fontSize: 10, marginTop: 1 }}>{i+1}.</span>
-                            <p style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'var(--font-body)', lineHeight: 1.55 }}>{item}</p>
-                          </div>
-                        )
-                      })}
+                {/* Failed queries */}
+                {ans.queries.filter(function(q) { return !!q.error }).map(function(q, i) {
+                  return (
+                    <div key={i} style={{ padding: '8px 20px', background: 'rgba(224,85,85,0.04)', borderBottom: '1px solid rgba(224,85,85,0.1)' }}>
+                      <p style={{ fontSize: 10, color: 'var(--red-text)', fontFamily: 'var(--font-mono)' }}>{q.title}: {q.error}</p>
                     </div>
+                  )
+                })}
+
+                {/* Narrative */}
+                {ans.narrative && (
+                  <div style={{ padding: '16px 20px' }}>
+                    <div style={{ marginBottom: 14 }}>
+                      <p style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#B8A0F0', fontFamily: 'var(--font-body)', marginBottom: 6 }}>Answer</p>
+                      <p style={{ fontSize: 13, color: 'var(--text-primary)', fontFamily: 'var(--font-body)', lineHeight: 1.7 }}>{ans.narrative.answer}</p>
+                    </div>
+
+                    {ans.narrative.key_findings && ans.narrative.key_findings.length > 0 && (
+                      <div style={{ marginBottom: 14 }}>
+                        <p style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginBottom: 6 }}>Key Findings</p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                          {ans.narrative.key_findings.map(function(f, i) {
+                            return (
+                              <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                                <span style={{ color: '#B8A0F0', flexShrink: 0, marginTop: 1 }}>·</span>
+                                <p style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'var(--font-body)', lineHeight: 1.55 }}>{f}</p>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {ans.narrative.drivers && (
+                      <div style={{ background: 'rgba(155,127,227,0.06)', border: '1px solid rgba(155,127,227,0.15)', borderRadius: 'var(--radius-sm)', padding: '10px 14px', marginBottom: 14 }}>
+                        <p style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#B8A0F0', fontFamily: 'var(--font-body)', marginBottom: 5 }}>What's Driving This</p>
+                        <p style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'var(--font-body)', lineHeight: 1.6 }}>{ans.narrative.drivers}</p>
+                      </div>
+                    )}
+
+                    {ans.narrative.investigate && ans.narrative.investigate.length > 0 && (
+                      <div style={{ background: 'rgba(240,160,48,0.05)', border: '1px solid rgba(240,160,48,0.15)', borderRadius: 'var(--radius-sm)', padding: '10px 14px', marginBottom: ans.narrative.data_limitation ? 12 : 0 }}>
+                        <p style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#F0A030', fontFamily: 'var(--font-body)', marginBottom: 6 }}>Investigate Further</p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          {ans.narrative.investigate.map(function(item, i) {
+                            return (
+                              <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                                <span style={{ color: '#F0A030', flexShrink: 0, fontFamily: 'var(--font-mono)', fontSize: 10, marginTop: 1 }}>{i+1}.</span>
+                                <p style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'var(--font-body)', lineHeight: 1.55 }}>{item}</p>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {ans.narrative.data_limitation && (
+                      <p style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', fontStyle: 'italic', marginTop: 8 }}>
+                        Note: {ans.narrative.data_limitation}
+                      </p>
+                    )}
                   </div>
                 )}
-
-                {/* Data limitation note */}
-                {ans.narrative.data_limitation && (
-                  <p style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', fontStyle: 'italic', marginTop: 8 }}>
-                    Note: {ans.narrative.data_limitation}
-                  </p>
-                )}
-              </div>
+              </>
             )}
           </div>
         )
@@ -1410,9 +1077,6 @@ if (json.queries) {
           </p>
         </div>
       )}
-        </>)}
     </div>
   )
 }
-
-
