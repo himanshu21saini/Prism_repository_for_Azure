@@ -110,6 +110,8 @@ function ChartCard({ title, insight, children, index, badge, fullWidth, onSimula
 }
 
 export default function Dashboard({ session }) {
+  var questionPanelRef = useRef(null)
+
   var [summaryState, setSummaryState] = useState('idle')
   var [narrative,    setNarrative]    = useState(null)
   var [summaryError, setSummaryError] = useState('')
@@ -131,7 +133,6 @@ export default function Dashboard({ session }) {
   // Accumulates trend data fetched by TrendExplorer so Generate Report/Decisions
   // can include it. Shape: { [field_name]: { data: [...], meta: {...} } }
   var [trendDataCache, setTrendDataCache] = useState({})
-  var questionPanelRef = useRef(null)
   var [trendSQLCache,  setTrendSQLCache]  = useState({})
 
   function handleTrendData(fieldName, data, meta, sql) {
