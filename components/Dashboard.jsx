@@ -123,17 +123,16 @@ export default function Dashboard({ session }) {
   var [whatifQuery, setWhatifQuery] = useState(null)
 
   var [tokenCalls, setTokenCalls] = useState(function() {
-    // Seed with generate-queries usage that already ran in SetupScreen
     if (session.initialUsage) {
       return [{ label: 'queries', promptTokens: session.initialUsage.prompt_tokens, completionTokens: session.initialUsage.completion_tokens, model: session.initialUsage.model || 'gpt-4o' }]
     }
     return []
   })
 
-  // Accumulates trend data fetched by TrendExplorer so Generate Report/Decisions
-  // can include it. Shape: { [field_name]: { data: [...], meta: {...} } }
   var [trendDataCache, setTrendDataCache] = useState({})
   var [trendSQLCache,  setTrendSQLCache]  = useState({})
+
+  // ── FIX 1: state for question SQLs to show in Query Inspector ──
   var [questionSQLCache, setQuestionSQLCache] = useState([])
 
   function handleTrendData(fieldName, data, meta, sql) {
@@ -157,18 +156,12 @@ export default function Dashboard({ session }) {
   var allQueries   = session.queries      || []
   var prefs        = session.preferences  || {}
 
-  var kpiResults     = queryResults.filter(function(r) { return r.chart_type === 'kpi' && !r.error && r.data && r.data.length })
-  var trendResults   = queryResults.filter(function(r) { return (r.chart_type === 'line' || r.chart_type === 'area') && !r.error && r.data && r.data.length })
-  var drillResults   = queryResults.filter(function(r) { return r.chart_type === 'drilldown' && !r.error && r.data && r.data.length })
-  var chartResults   = queryResults.filter(function(r) { return r.chart_type !== 'kpi' && r.chart_type !== 'line' && r.chart_type !== 'area' && r.chart_type !== 'drilldown' && !r.error && r.data && r.data.length })
-  var failed         = queryResults.filter(function(r) { return !!r.error })
+  var kpiResults   = queryResults.filter(function(r) { return r.chart_type === 'kpi' && !r.error && r.data && r.data.length })
+  var trendResults = queryResults.filter(function(r) { return (r.chart_type === 'line' || r.chart_type === 'area') && !r.error && r.data && r.data.length })
+  var drillResults = queryResults.filter(function(r) { return r.chart_type === 'drilldown' && !r.error && r.data && r.data.length })
+  var chartResults = queryResults.filter(function(r) { return r.chart_type !== 'kpi' && r.chart_type !== 'line' && r.chart_type !== 'area' && r.chart_type !== 'drilldown' && !r.error && r.data && r.data.length })
+  var failed       = queryResults.filter(function(r) { return !!r.error })
 
-  // Build enriched payload for LLM calls.
-  // Converts each cached trend series into BOTH:
-  //   1. A synthetic 'kpi' result — so generate-decisions can read it as a KPI
-  //      with current_value (latest data point) and comparison_value (year-ago point)
-  //   2. A synthetic 'area' result — so generate-summary sees the full time series
-  // This ensures trend data appears in health scores, decisions, AND narratives.
   function buildEnrichedQueryResults() {
     var existingKpiFields = new Set(
       queryResults
@@ -184,36 +177,32 @@ export default function Dashboard({ session }) {
       var data     = entry.data || []
       if (!data.length) return
 
-      // Sort chronologically
       var sorted = data.slice().sort(function(a, b) {
         return String(a.period || '').localeCompare(String(b.period || ''))
       })
 
-      var latest   = sorted[sorted.length - 1]
+      var latest    = sorted[sorted.length - 1]
       var latestVal = parseFloat((latest && latest.value) || 0)
 
-      // Find year-ago point (12 periods back) for comparison
       var yearAgoIdx = sorted.length >= 13 ? sorted.length - 13 : 0
       var yearAgo    = sorted[yearAgoIdx]
       var yearAgoVal = parseFloat((yearAgo && yearAgo.value) || 0)
 
-      // 1. Synthetic KPI card result — only add if not already present as a real KPI
       if (!existingKpiFields.has(field)) {
         syntheticResults.push({
-          id:              'trend_kpi_' + field,
-          title:           meta.display_name || field,
-          chart_type:      'kpi',
-          current_key:     'current_value',
-          comparison_key:  'comparison_value',
-          value_key:       'current_value',
-          unit:            meta.unit || '',
-          data:            [{ current_value: latestVal, comparison_value: yearAgoVal }],
-          error:           null,
-          _from_trend:     true,
+          id:             'trend_kpi_' + field,
+          title:          meta.display_name || field,
+          chart_type:     'kpi',
+          current_key:    'current_value',
+          comparison_key: 'comparison_value',
+          value_key:      'current_value',
+          unit:           meta.unit || '',
+          data:           [{ current_value: latestVal, comparison_value: yearAgoVal }],
+          error:          null,
+          _from_trend:    true,
         })
       }
 
-      // 2. Trend series result — always add so the LLM sees trajectory
       syntheticResults.push({
         id:         'trend_series_' + field,
         title:      (meta.display_name || field) + ' monthly trend',
@@ -221,7 +210,7 @@ export default function Dashboard({ session }) {
         label_key:  'period',
         value_key:  'value',
         unit:       meta.unit || '',
-        data:       sorted.slice(-24), // last 24 months max — keeps payload lean
+        data:       sorted.slice(-24),
         error:      null,
       })
     })
@@ -229,7 +218,6 @@ export default function Dashboard({ session }) {
     return queryResults.concat(syntheticResults)
   }
 
-  // Max 8 KPI cards (4 per row × 2 rows)
   var visibleKpis = kpiResults.slice(0, 8)
 
   async function handleGenerateSummary() {
@@ -246,8 +234,6 @@ export default function Dashboard({ session }) {
     } catch (err) { setSummaryError(err.message); setSummaryState('error') }
   }
 
-
-
   function handlePrint() {
     window.print()
   }
@@ -255,7 +241,6 @@ export default function Dashboard({ session }) {
   function handleScrollToQuestion() {
     if (questionPanelRef.current) {
       questionPanelRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      // Focus the input after scroll
       setTimeout(function() {
         var input = questionPanelRef.current && questionPanelRef.current.querySelector('textarea')
         if (input) input.focus()
@@ -296,7 +281,6 @@ export default function Dashboard({ session }) {
     var insight  = getInsight(result.id)
     var ct       = result.chart_type
 
-    // Find the full query object (has .sql) for the what-if simulator
     var fullQuery = allQueries.find(function(q) { return q.id === result.id }) || result
     var simulateQuery = Object.assign({}, fullQuery, {
       label_key:      result.label_key,
@@ -363,27 +347,19 @@ export default function Dashboard({ session }) {
       )
     }
 
-    // line and area chart types are rendered by TrendExplorer above the chart grid
-
     if (ct === 'pie' || ct === 'donut') {
       var innerR = ct === 'donut' ? 55 : 0
-
-      // Always auto-detect keys from the actual data row — never trust LLM key hints for pie
       var pieLabelKey = labelKey
       var pieValueKey = valueKey
       if (data.length > 0) {
         var firstRow = data[0]
         var keys = Object.keys(firstRow)
-
-        // Find label key — first string-valued column
         if (!firstRow[pieLabelKey]) {
           pieLabelKey = keys.find(function(k) {
             var v = firstRow[k]
             return typeof v === 'string' && v.length > 0 && isNaN(parseFloat(v))
           }) || keys[0]
         }
-
-        // Find value key — first numeric-valued column that isn't the label
         if (firstRow[pieValueKey] === undefined || firstRow[pieValueKey] === null) {
           pieValueKey = keys.find(function(k) {
             return k !== pieLabelKey && !isNaN(parseFloat(firstRow[k]))
@@ -391,7 +367,6 @@ export default function Dashboard({ session }) {
         }
       }
 
-      // Force all values to float, drop zero/null rows
       var pieData = data
         .map(function(r) {
           var row = Object.assign({}, r)
@@ -612,7 +587,7 @@ export default function Dashboard({ session }) {
             </div>
           </div>
 
-          {/* Token meter — always visible once dashboard loads (queries usage seeded from SetupScreen) */}
+          {/* Token meter */}
           {tokenCalls.length > 0 && (
             <div className="prism-print-hide" style={{ marginTop: 10 }}>
               <TokenMeter calls={tokenCalls} />
@@ -621,12 +596,12 @@ export default function Dashboard({ session }) {
         </div>
       )}
 
-      {/* ── Decision Intelligence — shown immediately when generated ── */}
+      {/* ── Decision Intelligence ── */}
       {prefs.decisions !== false && decisionState !== 'idle' && (
         <DecisionPanel result={decisionResult} state={decisionState} error={decisionError} />
       )}
 
-      {/* ── Summary — shown immediately when generated ─────────────── */}
+      {/* ── Summary ── */}
       {prefs.summary !== false && summaryState !== 'idle' && (
         <SummaryPanel narrative={narrative} state={summaryState} error={summaryError} />
       )}
@@ -634,14 +609,13 @@ export default function Dashboard({ session }) {
       {/* Teal divider */}
       <div style={{ height: '1px', background: 'linear-gradient(90deg, var(--accent), rgba(43,127,227,0.3), transparent)', opacity: 0.3, marginBottom: 24 }} />
 
-      {/* ── KPI Cards (max 4 per row, 2 rows = 8 max) ────────────── */}
+      {/* ── KPI Cards ── */}
       {visibleKpis.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10, marginBottom: 20 }}>
           {visibleKpis.map(function(r, i) {
             var row    = r.data[0] || {}
             var curKey = r.current_key  || r.value_key || 'current_value'
             var cmpKey = r.comparison_key || 'comparison_value'
-            // Look up favorable_direction from metadata by matching field_name to the result id
             var meta   = metadata.find(function(m) { return m.field_name === r.id || (r.title || '').toLowerCase().includes((m.display_name || '').toLowerCase()) })
             var favDir = meta && meta.favorable_direction ? meta.favorable_direction : 'i'
             return <KPICard key={r.id} title={r.title} value={row[curKey]} unit={r.unit} comparisonValue={row[cmpKey]} compLabel={periodInfo.cmpLabel} index={i} favorableDirection={favDir} />
@@ -654,7 +628,7 @@ export default function Dashboard({ session }) {
         <div style={{ height: '1px', background: 'linear-gradient(90deg, transparent, var(--accent), rgba(43,127,227,0.2), transparent)', opacity: 0.15, marginBottom: 20 }} />
       )}
 
-      {/* ── Trend Explorer ───────────────────────────────────────────── */}
+      {/* ── Trend Explorer ── */}
       {prefs.forecast !== false && (metadata || []).some(function(m) { return m.type === 'kpi' || m.type === 'derived_kpi' }) && (
         <TrendExplorer
           metadata={metadata}
@@ -665,19 +639,19 @@ export default function Dashboard({ session }) {
         />
       )}
 
-      {/* ── Drill-Down Panels (intent_generated heatmap queries) ─────── */}
+      {/* ── Drill-Down Panels ── */}
       {drillResults.map(function(result, idx) {
         return <DrillDownChart key={result.id} result={result} idx={idx} periodInfo={periodInfo} />
       })}
 
-      {/* ── Charts ────────────────────────────────────────────────────── */}
+      {/* ── Charts ── */}
       {chartResults.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
           {chartResults.map(function(result, idx) { return renderChart(result, idx) })}
         </div>
       )}
 
-      {/* ── Failed ────────────────────────────────────────────────────── */}
+      {/* ── Failed ── */}
       {failed.length > 0 && (
         <div style={{ background: 'var(--amber-light)', border: '1px solid rgba(240,160,48,0.2)', borderRadius: 'var(--radius-md)', padding: '12px 16px', marginBottom: 16 }}>
           <p style={{ fontSize: 12, color: 'var(--amber-text)', marginBottom: 4, fontFamily: 'var(--font-body)' }}>
@@ -686,6 +660,7 @@ export default function Dashboard({ session }) {
           {failed.map(function(r) { return <p key={r.id} style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{r.title}: {r.error}</p> })}
         </div>
       )}
+
 
       {/* ── Query Inspector ───────────────────────────────────────────── */}
       {prefs.queryInspector !== false && (
