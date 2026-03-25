@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useRef, forwardRef } from 'react'
+import React, { useState, useRef } from 'react'
 import {
   BarChart, Bar, AreaChart, Area, LineChart, Line,
   PieChart, Pie, Cell, ScatterChart, Scatter,
@@ -791,8 +791,8 @@ function QueryInspector({ queries, periodInfo, trendSQLs }) {
       )}
 
       {/* ── Question Panel ─────────────────────────────────────────────── */}
-      <QuestionPanel
-        ref={questionPanelRef}
+<QuestionPanel
+  panelRef={questionPanelRef}
         datasetId={session.datasetId}
         metadata={metadata}
         periodInfo={periodInfo}
@@ -1363,4 +1363,3 @@ var QuestionPanel = function QuestionPanel(props) {
   )
 })
 
-QuestionPanel.displayName = 'QuestionPanel'
