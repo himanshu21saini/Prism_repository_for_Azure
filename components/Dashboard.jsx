@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import React, { useState, useRef } from 'react'
 import {
   BarChart, Bar, AreaChart, Area, LineChart, Line,
   PieChart, Pie, Cell, ScatterChart, Scatter,
@@ -104,6 +104,22 @@ function ChartCard({ title, insight, children, index, badge, fullWidth, onSimula
         )}
       </div>
       {children}
+
+      {/* ── Question Panel ────────────────────────────────────────────── */}
+      <QuestionPanel
+        ref={questionPanelRef}
+        datasetId={session.datasetId}
+        metadata={metadata}
+        periodInfo={periodInfo}
+        userContext={session.userContext}
+        onTokens={function(u) {
+          setTokenCalls(function(prev) {
+            return prev.concat([{ label: 'question', promptTokens: u.prompt_tokens, completionTokens: u.completion_tokens, model: u.model || 'gpt-4o' }])
+          })
+        }}
+        renderChart={renderChart}
+      />
+
     </div>
   )
 }
@@ -130,6 +146,7 @@ export default function Dashboard({ session }) {
   // Accumulates trend data fetched by TrendExplorer so Generate Report/Decisions
   // can include it. Shape: { [field_name]: { data: [...], meta: {...} } }
   var [trendDataCache, setTrendDataCache] = useState({})
+  var questionPanelRef = useRef(null)
   var [trendSQLCache,  setTrendSQLCache]  = useState({})
 
   function handleTrendData(fieldName, data, meta, sql) {
@@ -246,6 +263,17 @@ export default function Dashboard({ session }) {
 
   function handlePrint() {
     window.print()
+  }
+
+  function handleScrollToQuestion() {
+    if (questionPanelRef.current) {
+      questionPanelRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      // Focus the input after scroll
+      setTimeout(function() {
+        var input = questionPanelRef.current && questionPanelRef.current.querySelector('textarea')
+        if (input) input.focus()
+      }, 500)
+    }
   }
 
   async function handleGenerateDecisions() {
@@ -557,6 +585,41 @@ export default function Dashboard({ session }) {
                   <rect x="3" y="8" width="8" height="5" rx="0.5" stroke="currentColor" strokeWidth="1.3"/>
                   <circle cx="11" cy="7" r="0.6" fill="currentColor"/>
                 </svg>
+              </button>
+
+              {/* Ask a Question button */}
+              <div style={{ width: 1, height: 20, background: 'var(--border)', flexShrink: 0 }} />
+              <button
+                onClick={handleScrollToQuestion}
+                title="Ask a question about your data"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '8px 14px',
+                  background: 'linear-gradient(135deg, rgba(155,127,227,0.14) 0%, rgba(103,74,183,0.1) 100%)',
+                  border: '1px solid rgba(155,127,227,0.35)',
+                  borderRadius: 'var(--radius-md)',
+                  color: '#B8A0F0',
+                  cursor: 'pointer',
+                  fontSize: 11, fontWeight: 600,
+                  fontFamily: 'var(--font-display)',
+                  letterSpacing: '0.08em', textTransform: 'uppercase',
+                  transition: 'all var(--transition)', flexShrink: 0,
+                }}
+                onMouseEnter={function(e) {
+                  e.currentTarget.style.background  = 'rgba(155,127,227,0.22)'
+                  e.currentTarget.style.boxShadow   = '0 0 12px rgba(155,127,227,0.15)'
+                }}
+                onMouseLeave={function(e) {
+                  e.currentTarget.style.background  = 'linear-gradient(135deg, rgba(155,127,227,0.14) 0%, rgba(103,74,183,0.1) 100%)'
+                  e.currentTarget.style.boxShadow   = 'none'
+                }}
+              >
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                  <circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1.3"/>
+                  <path d="M4.5 4.5a1.5 1.5 0 0 1 3 0c0 1-1.5 1.5-1.5 2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+                  <circle cx="6" cy="9" r="0.6" fill="currentColor"/>
+                </svg>
+                Ask
               </button>
 
             </div>
@@ -1005,3 +1068,297 @@ function DrillDownChart({ result, idx, periodInfo }) {
     </div>
   )
 }
+
+// ── QuestionPanel ─────────────────────────────────────────────────────────────
+// Free-flowing question interface anchored at the bottom of the dashboard.
+// Each question generates its own charts + narrative answer block.
+// Context filters from setup always apply — cannot be overridden by questions.
+
+var QuestionPanel = React.forwardRef(function QuestionPanel(props, ref) {
+  var datasetId   = props.datasetId
+  var metadata    = props.metadata    || []
+  var periodInfo  = props.periodInfo  || {}
+  var userContext = props.userContext  || null
+  var onTokens    = props.onTokens    || function() {}
+  var renderChart = props.renderChart || function() { return null }
+
+  var [question,  setQuestion]  = useState('')
+  var [loading,   setLoading]   = useState(false)
+  var [error,     setError]     = useState('')
+  var [answers,   setAnswers]   = useState([])   // array of answer blocks
+
+  async function handleAsk() {
+    var q = question.trim()
+    if (!q || loading) return
+    setLoading(true); setError('')
+
+    try {
+      var res  = await fetch('/api/ask-question', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          question:    q,
+          datasetId:   datasetId,
+          metadata:    metadata,
+          periodInfo:  periodInfo,
+          userContext: userContext,
+        }),
+      })
+      var json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Question failed.')
+      if (json.usage) onTokens(json.usage)
+
+      setAnswers(function(prev) {
+        return prev.concat([{
+          id:             Date.now(),
+          question:       q,
+          periodUsed:     json.periodUsed,
+          queries:        json.queries        || [],
+          narrative:      json.narrative,
+          dependentFields: json.dependentFields || [],
+        }])
+      })
+      setQuestion('')
+    } catch(err) {
+      setError(err.message)
+    }
+    setLoading(false)
+  }
+
+  function handleKeyDown(e) {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleAsk()
+  }
+
+  return (
+    <div ref={ref} style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid var(--border)' }}>
+
+      {/* Section header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+        <div style={{
+          width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
+          background: 'linear-gradient(135deg, rgba(155,127,227,0.2), rgba(103,74,183,0.1))',
+          border: '1px solid rgba(155,127,227,0.3)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <svg width="13" height="13" viewBox="0 0 12 12" fill="none">
+            <circle cx="6" cy="6" r="5" stroke="#B8A0F0" strokeWidth="1.3"/>
+            <path d="M4.5 4.5a1.5 1.5 0 0 1 3 0c0 1-1.5 1.5-1.5 2.5" stroke="#B8A0F0" strokeWidth="1.3" strokeLinecap="round"/>
+            <circle cx="6" cy="9" r="0.6" fill="#B8A0F0"/>
+          </svg>
+        </div>
+        <div>
+          <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'var(--font-display)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+            Ask a Question
+          </p>
+          <p style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginTop: 1 }}>
+            Ask anything about your data · Context from setup always applies · ⌘↵ to submit
+          </p>
+        </div>
+      </div>
+
+      {/* Input row */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+        <textarea
+          value={question}
+          onChange={function(e) { setQuestion(e.target.value) }}
+          onKeyDown={handleKeyDown}
+          placeholder="e.g. Which branch had the highest BFI score in Feb 2026? Why did Branch_2 decline?"
+          rows={2}
+          style={{
+            flex: 1,
+            padding: '10px 14px',
+            background: 'var(--surface-2)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-md)',
+            color: 'var(--text-primary)',
+            fontSize: 12,
+            fontFamily: 'var(--font-body)',
+            lineHeight: 1.5,
+            resize: 'vertical',
+            outline: 'none',
+            transition: 'border-color var(--transition)',
+          }}
+          onFocus={function(e) { e.target.style.borderColor = 'rgba(155,127,227,0.5)' }}
+          onBlur={function(e)  { e.target.style.borderColor = 'var(--border)' }}
+        />
+        <button
+          onClick={handleAsk}
+          disabled={!question.trim() || loading}
+          style={{
+            padding: '0 20px',
+            background: !question.trim() || loading
+              ? 'transparent'
+              : 'linear-gradient(135deg, rgba(155,127,227,0.2) 0%, rgba(103,74,183,0.14) 100%)',
+            border: '1px solid ' + (!question.trim() || loading ? 'var(--border)' : 'rgba(155,127,227,0.4)'),
+            borderRadius: 'var(--radius-md)',
+            color: !question.trim() || loading ? 'var(--text-tertiary)' : '#B8A0F0',
+            cursor: !question.trim() || loading ? 'not-allowed' : 'pointer',
+            fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-display)',
+            letterSpacing: '0.08em', textTransform: 'uppercase',
+            display: 'flex', alignItems: 'center', gap: 7,
+            transition: 'all var(--transition)', flexShrink: 0, alignSelf: 'stretch',
+          }}
+        >
+          {loading
+            ? <><span className="spinner" style={{ borderTopColor: '#B8A0F0', borderColor: 'var(--border)', width: 12, height: 12, borderWidth: 1.5 }} /> Thinking...</>
+            : 'Ask'
+          }
+        </button>
+      </div>
+
+      {/* Error */}
+      {error && (
+        <p style={{ fontSize: 11, color: 'var(--red-text)', background: 'var(--red-light)', padding: '7px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(224,85,85,0.2)', marginBottom: 12, fontFamily: 'var(--font-body)' }}>
+          {error}
+        </p>
+      )}
+
+      {/* Answer blocks */}
+      {answers.map(function(ans) {
+        return (
+          <div key={ans.id} className="fade-in" style={{
+            marginTop: 20,
+            background: 'linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%)',
+            border: '1px solid rgba(155,127,227,0.2)',
+            borderRadius: 'var(--radius-lg)',
+            overflow: 'hidden',
+          }}>
+            {/* Top accent */}
+            <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, rgba(155,127,227,0.5), transparent)' }} />
+
+            {/* Question header */}
+            <div style={{ padding: '14px 20px 12px', borderBottom: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                <span style={{
+                  fontSize: 9, padding: '2px 7px', borderRadius: 3, flexShrink: 0, marginTop: 2,
+                  background: 'rgba(155,127,227,0.12)', color: '#B8A0F0',
+                  border: '1px solid rgba(155,127,227,0.25)',
+                  fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600,
+                }}>Q</span>
+                <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', fontFamily: 'var(--font-body)', lineHeight: 1.5, flex: 1 }}>
+                  {ans.question}
+                </p>
+                <span style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', flexShrink: 0, marginTop: 2 }}>
+                  {ans.periodUsed}
+                </span>
+              </div>
+            </div>
+
+            {/* Charts */}
+            {ans.queries.filter(function(q) { return !q.error && q.data && q.data.length }).length > 0 && (
+              <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: ans.queries.filter(function(q){ return !q.error && q.data && q.data.length }).length === 1 ? '1fr' : '1fr 1fr', gap: 12 }}>
+                  {ans.queries
+                    .filter(function(q) { return !q.error && q.data && q.data.length })
+                    .map(function(q, i) { return renderChart(q, i) })
+                  }
+                </div>
+              </div>
+            )}
+
+            {/* Failed queries notice */}
+            {ans.queries.filter(function(q) { return !!q.error }).map(function(q, i) {
+              return (
+                <div key={i} style={{ padding: '8px 20px', background: 'rgba(224,85,85,0.04)', borderBottom: '1px solid rgba(224,85,85,0.1)' }}>
+                  <p style={{ fontSize: 10, color: 'var(--red-text)', fontFamily: 'var(--font-mono)' }}>
+                    {q.title}: {q.error}
+                  </p>
+                </div>
+              )
+            })}
+
+            {/* Narrative */}
+            {ans.narrative && (
+              <div style={{ padding: '16px 20px' }}>
+
+                {/* Answer */}
+                <div style={{ marginBottom: 14 }}>
+                  <p style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#B8A0F0', fontFamily: 'var(--font-body)', marginBottom: 6 }}>
+                    Answer
+                  </p>
+                  <p style={{ fontSize: 13, color: 'var(--text-primary)', fontFamily: 'var(--font-body)', lineHeight: 1.7 }}>
+                    {ans.narrative.answer}
+                  </p>
+                </div>
+
+                {/* Key findings */}
+                {ans.narrative.key_findings && ans.narrative.key_findings.length > 0 && (
+                  <div style={{ marginBottom: 14 }}>
+                    <p style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginBottom: 6 }}>
+                      Key Findings
+                    </p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                      {ans.narrative.key_findings.map(function(f, i) {
+                        return (
+                          <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                            <span style={{ color: '#B8A0F0', flexShrink: 0, marginTop: 1 }}>·</span>
+                            <p style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'var(--font-body)', lineHeight: 1.55 }}>{f}</p>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Drivers */}
+                {ans.narrative.drivers && (
+                  <div style={{
+                    background: 'rgba(155,127,227,0.06)', border: '1px solid rgba(155,127,227,0.15)',
+                    borderRadius: 'var(--radius-sm)', padding: '10px 14px', marginBottom: 14,
+                  }}>
+                    <p style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#B8A0F0', fontFamily: 'var(--font-body)', marginBottom: 5 }}>
+                      What's Driving This
+                    </p>
+                    <p style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'var(--font-body)', lineHeight: 1.6 }}>
+                      {ans.narrative.drivers}
+                    </p>
+                  </div>
+                )}
+
+                {/* Investigate */}
+                {ans.narrative.investigate && ans.narrative.investigate.length > 0 && (
+                  <div style={{
+                    background: 'rgba(240,160,48,0.05)', border: '1px solid rgba(240,160,48,0.15)',
+                    borderRadius: 'var(--radius-sm)', padding: '10px 14px', marginBottom: ans.narrative.data_limitation ? 12 : 0,
+                  }}>
+                    <p style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#F0A030', fontFamily: 'var(--font-body)', marginBottom: 6 }}>
+                      Investigate Further
+                    </p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {ans.narrative.investigate.map(function(item, i) {
+                        return (
+                          <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                            <span style={{ color: '#F0A030', flexShrink: 0, fontFamily: 'var(--font-mono)', fontSize: 10, marginTop: 1 }}>{i+1}.</span>
+                            <p style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'var(--font-body)', lineHeight: 1.55 }}>{item}</p>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Data limitation note */}
+                {ans.narrative.data_limitation && (
+                  <p style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', fontStyle: 'italic', marginTop: 8 }}>
+                    Note: {ans.narrative.data_limitation}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })}
+
+      {/* Empty state */}
+      {answers.length === 0 && !loading && (
+        <div style={{ padding: '20px 0', textAlign: 'center' }}>
+          <p style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', lineHeight: 1.6 }}>
+            Ask any question about your data above — period context from your setup applies automatically.
+          </p>
+        </div>
+      )}
+    </div>
+  )
+})
+
+QuestionPanel.displayName = 'QuestionPanel'
