@@ -155,6 +155,7 @@ export async function POST(request) {
     '1. All field access: data->>\'field_name\' (exact case from catalogue)',
     '2. Numeric cast: COALESCE((data->>\'field\')::numeric, 0)',
     '3. Every query must include WHERE dataset_id = ' + datasetId + ' AND ' + periodConds.cond + (CF ? CF : ''),
+    '3b. When using subqueries, ALWAYS alias every JSONB extraction in the inner SELECT (e.g. data->>\'branch_name\' AS branch_name). The outer query must reference the alias (branch_name), never re-access data->>\'field\' from a subquery result — the data column does not exist in subquery scope.',
     '4. Use the aggregation from the field catalogue (SUM for cumulative, AVG for point_in_time)',
     '5. For ranking queries: ORDER BY value DESC LIMIT 10',
     '6. For trend queries: GROUP BY year_field, month_field ORDER BY period ASC',
