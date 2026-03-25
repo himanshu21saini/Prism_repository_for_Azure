@@ -1361,6 +1361,6 @@ var QuestionPanel = function QuestionPanel(props) {
       )}
     </div>
   )
-})
+}
 
 
