@@ -225,11 +225,8 @@ export function SetupScreenDev({ onReady }) {
     try {
       if (dataMode === 'upload') {
         if (!dataFile) { setError('Please select a data file.'); setWorking(false); return }
-        setProgress('Uploading dataset...')
-        var fd = new FormData(); fd.append('file', dataFile); fd.append('name', dataName || dataFile.name)
-        var dr = await fetch('/api/upload-dataset', { method: 'POST', body: fd }); var dj = await dr.json()
-        if (!dr.ok) throw new Error(dj.error || 'Dataset upload failed.')
-        finalDatasetId = String(dj.dataset.id); await loadLists()
+        var dataset = await uploadDatasetChunked(dataFile, dataName || dataFile.name)
+        finalDatasetId = String(dataset.id); await loadLists()
       }
       if (metaMode === 'upload') {
         if (!metaFile) { setError('Please select a metadata file.'); setWorking(false); return }
@@ -845,6 +842,73 @@ export function SetupScreenProd({ onReady }) {
     setLoadingLists(false)
   }
 
+
+  // ── Client-side chunked upload ────────────────────────────────────────────
+  // Parses the Excel/CSV file in the browser using xlsx (already in package.json)
+  // then POSTs rows as JSON in 1000-row chunks to avoid Vercel's 4.5MB payload limit.
+  async function uploadDatasetChunked(file, name) {
+    // Dynamically import xlsx — already installed, just lazy-load it
+    var XLSX = (await import('xlsx')).default || (await import('xlsx'))
+
+    // Read file as ArrayBuffer
+    var arrayBuffer = await new Promise(function(resolve, reject) {
+      var reader = new FileReader()
+      reader.onload  = function(e) { resolve(e.target.result) }
+      reader.onerror = function()  { reject(new Error('Failed to read file')) }
+      reader.readAsArrayBuffer(file)
+    })
+
+    // Parse workbook
+    var buffer = new Uint8Array(arrayBuffer)
+    var wb     = file.name.toLowerCase().endsWith('.csv')
+      ? XLSX.read(new TextDecoder('utf-8').decode(buffer), { type: 'string' })
+      : XLSX.read(buffer, { type: 'array' })
+
+    var rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: null })
+    if (!rows.length) throw new Error('File is empty.')
+
+    // Step 1 — initialise dataset (get ID back, or replace existing)
+    setProgress('Preparing dataset (' + rows.length.toLocaleString() + ' rows)...')
+    var initRes  = await fetch('/api/upload-dataset', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ action: 'init', name: name, rowCount: rows.length, columns: Object.keys(rows[0]).join(',') }),
+    })
+    var initJson = await initRes.json()
+    if (!initRes.ok) throw new Error(initJson.error || 'Dataset init failed.')
+    var datasetId = initJson.datasetId
+
+    // Step 2 — send rows in 1000-row JSON chunks
+    var CHUNK = 1000
+    var total  = rows.length
+    var chunks = Math.ceil(total / CHUNK)
+
+    for (var c = 0; c < chunks; c++) {
+      var chunk    = rows.slice(c * CHUNK, (c + 1) * CHUNK)
+      var uploaded = Math.min((c + 1) * CHUNK, total)
+      setProgress('Uploading ' + uploaded.toLocaleString() + ' / ' + total.toLocaleString() + ' rows...')
+
+      var chunkRes  = await fetch('/api/upload-dataset', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ action: 'chunk', datasetId: datasetId, rows: chunk }),
+      })
+      var chunkJson = await chunkRes.json()
+      if (!chunkRes.ok) throw new Error(chunkJson.error || 'Chunk upload failed at batch ' + (c + 1))
+    }
+
+    // Step 3 — finalise
+    setProgress('Finalising...')
+    var finalRes  = await fetch('/api/upload-dataset', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ action: 'finalise', datasetId: datasetId, name: name, rowCount: total }),
+    })
+    var finalJson = await finalRes.json()
+    if (!finalRes.ok) throw new Error(finalJson.error || 'Finalise failed.')
+    return finalJson.dataset
+  }
+
   async function handleAutoGenMeta() {
     var dsId = dataMode === 'existing' ? selDataset : null
     if (!dsId) { setError('Select or upload a dataset first.'); return }
@@ -890,11 +954,8 @@ export function SetupScreenProd({ onReady }) {
     try {
       if (dataMode === 'upload') {
         if (!dataFile) { setError('Please select a data file.'); setWorking(false); return }
-        setProgress('Uploading dataset...')
-        var fd = new FormData(); fd.append('file', dataFile); fd.append('name', dataName || dataFile.name)
-        var dr = await fetch('/api/upload-dataset', { method: 'POST', body: fd }); var dj = await dr.json()
-        if (!dr.ok) throw new Error(dj.error || 'Dataset upload failed.')
-        finalDatasetId = String(dj.dataset.id); await loadLists()
+        var dataset = await uploadDatasetChunked(dataFile, dataName || dataFile.name)
+        finalDatasetId = String(dataset.id); await loadLists()
       }
       if (metaMode === 'upload') {
         if (!metaFile) { setError('Please select a metadata file.'); setWorking(false); return }
