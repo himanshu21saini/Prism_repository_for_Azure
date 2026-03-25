@@ -688,7 +688,7 @@ export default function Dashboard({ session }) {
 
       {/* ── Query Inspector ───────────────────────────────────────────── */}
       {prefs.queryInspector !== false && (
-      <QueryInspector
+    <QueryInspector
   queries={allQueries}
   periodInfo={periodInfo}
   trendSQLs={trendSQLCache}
@@ -809,15 +809,11 @@ function QueryInspector({ queries, periodInfo, trendSQLs, questionPanelRef, data
       {/* ── Question Panel ─────────────────────────────────────────────── */}
       <QuestionPanel
         panelRef={questionPanelRef}
-        datasetId={session.datasetId}
+        datasetId={datasetId}
         metadata={metadata}
         periodInfo={periodInfo}
-        userContext={session.userContext}
-        onTokens={function(u) {
-          setTokenCalls(function(prev) {
-            return prev.concat([{ label: 'question', promptTokens: u.prompt_tokens, completionTokens: u.completion_tokens, model: u.model || 'gpt-4o' }])
-          })
-        }}
+        userContext={userContext}
+        onTokens={onTokens}
         renderChart={renderChart}
       />
 
