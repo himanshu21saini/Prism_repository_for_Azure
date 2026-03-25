@@ -1075,7 +1075,8 @@ function DrillDownChart({ result, idx, periodInfo }) {
 // Each question generates its own charts + narrative answer block.
 // Context filters from setup always apply — cannot be overridden by questions.
 
-var QuestionPanel = forwardRef(function QuestionPanel(props, ref) {
+var QuestionPanel = function QuestionPanel(props) {
+  var ref = props.panelRef
   var datasetId   = props.datasetId
   var metadata    = props.metadata    || []
   var periodInfo  = props.periodInfo  || {}
