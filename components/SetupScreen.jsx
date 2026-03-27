@@ -321,8 +321,11 @@ export default function SetupScreen({ onReady }) {
     var wb = file.name.toLowerCase().endsWith('.csv') ? XLSX.read(new TextDecoder('utf-8').decode(buffer), { type: 'string' }) : XLSX.read(buffer, { type: 'array' })
     var rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: null, raw: false, dateNF: 'yyyy-mm-dd' })
     if (!rows.length) throw new Error('File is empty.')
-    setProgress('Preparing dataset (' + rows.length.toLocaleString() + ' rows)...')
-    var initRes  = await fetch('/api/upload-dataset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'init', name: name, rowCount: rows.length, columns: Object.keys(rows[0]).join(',') }) })
+       setProgress('Preparing dataset (' + rows.length.toLocaleString() + ' rows)...')
+   var initRes = await fetch('/api/upload-dataset', {
+     method: 'POST', headers: { 'Content-Type': 'application/json' },
+     body: JSON.stringify({ action: 'init', name: name, rowCount: rows.length, sampleRows: rows.slice(0, 20) })
+   })
     var initJson = await initRes.json(); if (!initRes.ok) throw new Error(initJson.error || 'Dataset init failed.')
     var datasetId = initJson.datasetId; var CHUNK = 1000; var total = rows.length; var chunks = Math.ceil(total / CHUNK)
     for (var c = 0; c < chunks; c++) {
