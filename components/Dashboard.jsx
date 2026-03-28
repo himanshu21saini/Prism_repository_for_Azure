@@ -300,7 +300,39 @@ export default function Dashboard({ session }) {
         </ChartCard>
       )
     }
+if (ct === 'table' || (ct === 'bar' && data.length > 15) || ct === 'multi_line') {
+      var cols = data.length > 0 ? Object.keys(data[0]) : []
+      return (
+        <ChartCard key={result.id} title={result.title} insight={insight} index={idx} onSimulate={onSimulate}>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+              <thead>
+                <tr>
+                  {cols.map(function(col) {
+                    return <th key={col} style={{ padding: '6px 10px', textAlign: 'left', fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-tertiary)', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap', fontFamily: 'var(--font-body)' }}>{col}</th>
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {data.map(function(row, i) {
+                  return (
+                    <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                      {cols.map(function(col) {
+                        var v = row[col]
+                        var isNum = v !== null && v !== undefined && !isNaN(parseFloat(v)) && col !== labelKey
+                        return <td key={col} style={{ padding: '7px 10px', color: isNum ? 'var(--text-accent)' : 'var(--text-primary)', textAlign: isNum ? 'right' : 'left', fontFamily: isNum ? 'var(--font-mono)' : 'var(--font-body)', fontSize: 11 }}>{isNum ? fmt(v) : String(v ?? '')}</td>
+                      })}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </ChartCard>
+      )
+    }
 
+  
     return null
   }
 
