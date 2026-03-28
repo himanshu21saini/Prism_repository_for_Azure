@@ -122,6 +122,48 @@ function renderChart(result, idx) {
   return null
 }
 
+function QueryInspector({ queries }) {
+  var [open, setOpen] = useState(false)
+  var [copied, setCopied] = useState(null)
+
+  function copySQL(sql, id) {
+    navigator.clipboard.writeText(sql)
+    setCopied(id)
+    setTimeout(function() { setCopied(null) }, 1500)
+  }
+
+  return (
+    <div style={{ borderTop: '1px solid var(--border)' }}>
+      <div onClick={function() { setOpen(function(v) { return !v }) }}
+        style={{ padding: '8px 20px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, background: open ? 'rgba(0,0,0,0.1)' : 'transparent' }}>
+        <span style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>SQL Inspector</span>
+        <span style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, background: 'var(--surface-3)', color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>{queries.length}</span>
+        <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--text-tertiary)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform var(--transition)' }}>▾</span>
+      </div>
+      {open && (
+        <div style={{ padding: '0 20px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {queries.map(function(q) {
+            return (
+              <div key={q.id} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+                <div style={{ padding: '6px 10px', background: 'var(--surface-3)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 10, color: 'var(--text-secondary)', fontFamily: 'var(--font-body)', fontWeight: 500 }}>{q.title}</span>
+                  <button onClick={function() { copySQL(q.sql, q.id) }}
+                    style={{ fontSize: 9, padding: '2px 8px', borderRadius: 3, border: '1px solid var(--border)', background: 'transparent', color: copied === q.id ? '#10C48A' : 'var(--text-tertiary)', cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>
+                    {copied === q.id ? 'Copied!' : 'Copy'}
+                  </button>
+                </div>
+                <pre style={{ margin: 0, padding: '10px 12px', fontSize: 10, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', lineHeight: 1.6, overflowX: 'auto', background: 'transparent', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                  {q.sql}
+                </pre>
+                {q.error && <p style={{ margin: 0, padding: '6px 12px', fontSize: 10, color: 'var(--red-text)', background: 'rgba(224,85,85,0.06)', fontFamily: 'var(--font-mono)' }}>Error: {q.error}</p>}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
 // ── Main AskOnlyView ──────────────────────────────────────────────────────────
 
 export default function AskOnlyView({ session }) {
