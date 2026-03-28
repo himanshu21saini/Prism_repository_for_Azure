@@ -389,6 +389,24 @@ export default function SetupScreen({ onReady }) {
         finalMetaId = String(mj.metadataSet.id); await loadLists()
       }
 
+      // ── Refresh mandatory filters after upload using finalMetaId ─────────
+      if (metaMode === 'upload') {
+        try {
+          var mfRes2  = await fetch('/api/metadata-fields?metadataSetId=' + finalMetaId)
+          var mfJson2 = await mfRes2.json()
+          var mFields = (mfJson2.fields || []).filter(function(f) {
+            return f.mandatory_filter_value && String(f.mandatory_filter_value).trim()
+          })
+          setMandatoryFilterFields(mFields)
+          var defaults = {}
+          mFields.forEach(function(f) { defaults[f.field_name] = String(f.mandatory_filter_value).trim() })
+          setMandatoryFilterValues(defaults)
+          // Use freshly loaded values for this build
+          mandatoryFilters = mFields.map(function(f) {
+            return { field: f.field_name, value: defaults[f.field_name], display_name: f.display_name || f.field_name }
+          })
+        } catch(e) { console.warn('Could not refresh mandatory filters:', e.message) }
+      }
       // ── Resolve period pairs fresh at build time (fixes race condition) ─
       var activePairs = periodPairs
       if (!activePairs.length) {
