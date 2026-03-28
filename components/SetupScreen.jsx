@@ -475,6 +475,101 @@ export default function SetupScreen({ onReady }) {
     } catch(err) { setError('Auto-generate failed: ' + err.message); setAutoGenState('error') }
   }
 
+  // ── Ask Only mode — no generate-queries, go straight to ask interface ────
+  async function handleAskOnly() {
+    setError('')
+    if (metaMode === 'upload') { setError('Please save your metadata file first using the "Save Metadata" button.'); return }
+    if (dataMode === 'upload') { setError('Please upload your dataset first.'); return }
+    setWorking(true); setProgress('Preparing Ask session...')
+    try {
+      // Resolve period pairs
+      var activePairs = periodPairs
+      if (!activePairs.length) {
+        try {
+          var pRes  = await fetch('/api/metadata-fields?metadataSetId=' + selMeta)
+          var pJson = await pRes.json()
+          activePairs = detectPeriodPairs((pJson.fields || []).filter(function(f) { return f.type === 'year_month' }))
+        } catch(e) { activePairs = [] }
+      }
+      if (!activePairs.length) activePairs = [{ yearField: 'year', monthField: 'month' }]
+      var chosenPair = activePairs[selPairIdx] || activePairs[0]
+
+      // Load metadata rows
+      var metaRes  = await fetch('/api/metadata-fields?metadataSetId=' + selMeta)
+      var metaJson = await metaRes.json()
+      var metadata = metaJson.fields || []
+
+      // Build mandatory filters
+      var mandatoryFilters = mandatoryFilterFields.map(function(f) {
+        return { field: f.field_name, value: mandatoryFilterValues[f.field_name] || String(f.mandatory_filter_value).trim(), display_name: f.display_name || f.field_name }
+      })
+
+      var timePeriod = { viewType, year: selYear, month: selMonth, comparisonType: compType, yearField: chosenPair.yearField, monthField: chosenPair.monthField }
+
+      // Build periodInfo matching what generate-queries would return
+      var periodInfo = {
+        viewLabel: viewType + ' · ' + selYear + '-' + selMonth,
+        cmpLabel:  compType,
+        yf:        chosenPair.yearField,
+        mf:        chosenPair.monthField,
+        curYear:   selYear,
+        curCond:   chosenPair.yearField + ' = ' + selYear + ' AND ' + chosenPair.monthField + ' = ' + selMonth,
+      }
+
+      onReady({
+        mode:            'ask-only',
+        datasetId:       selDataset,
+        metadataSetId:   selMeta,
+        metadata:        metadata,
+        timePeriod,
+        periodInfo,
+        userContext:     null,
+        mandatoryFilters,
+        preferences:     prefs,
+        // No queries or queryResults — skipping generate-queries entirely
+        queries:         [],
+        queryResults:    [],
+      })
+    } catch(err) { setError(err.message); setWorking(false); setProgress('') }
+  }
+
+  async function handleAskOnly() {
+    setError('')
+    if (metaMode === 'upload') { setError('Please save your metadata file first using the Save Metadata button.'); return }
+    if (!selDataset || !selMeta) { setError('Please select a dataset and metadata first.'); return }
+    setWorking(true); setProgress('Preparing Ask session...')
+    try {
+      var activePairs = periodPairs
+      if (!activePairs.length) {
+        try {
+          var pRes  = await fetch('/api/metadata-fields?metadataSetId=' + selMeta)
+          var pJson = await pRes.json()
+          activePairs = detectPeriodPairs((pJson.fields || []).filter(function(f) { return f.type === 'year_month' }))
+        } catch(e) { activePairs = [] }
+      }
+      if (!activePairs.length) activePairs = [{ yearField: 'year', monthField: 'month' }]
+      var chosenPair = activePairs[selPairIdx] || activePairs[0]
+      var metaRes  = await fetch('/api/metadata-fields?metadataSetId=' + selMeta)
+      var metaJson = await metaRes.json()
+      var metadata = metaJson.fields || []
+      var mandatoryFilters = mandatoryFilterFields.map(function(f) {
+        return { field: f.field_name, value: mandatoryFilterValues[f.field_name] || String(f.mandatory_filter_value).trim(), display_name: f.display_name || f.field_name }
+      })
+      var timePeriod = { viewType, year: selYear, month: selMonth, comparisonType: compType, yearField: chosenPair.yearField, monthField: chosenPair.monthField }
+      var mo = selMonth; var yr = selYear
+      var mMin = viewType === 'MTD' ? mo : viewType === 'YTD' ? 1 : Math.floor((mo - 1) / 3) * 3 + 1
+      var periodInfo = {
+        viewLabel: viewType + ' · ' + yr + '-' + (mo < 10 ? '0' + mo : mo),
+        cmpLabel:  compType,
+        yf:        chosenPair.yearField,
+        mf:        chosenPair.monthField,
+        curYear:   yr,
+        curCond:   chosenPair.yearField + ' = ' + yr + ' AND ' + chosenPair.monthField + ' >= ' + mMin + ' AND ' + chosenPair.monthField + ' <= ' + mo,
+      }
+      onReady({ mode: 'ask-only', datasetId: selDataset, metadataSetId: selMeta, metadata, timePeriod, periodInfo, userContext: null, mandatoryFilters, preferences: prefs, queries: [], queryResults: [] })
+    } catch(err) { setError(err.message); setWorking(false); setProgress('') }
+  }
+
   async function handleBuild() {
     setError('')
     var contextText = (contextRef.current && contextRef.current.value) || ''
@@ -861,6 +956,13 @@ export default function SetupScreen({ onReady }) {
           )}
 
           <div style={{ flex: 1 }} />
+
+          {/* Ask Questions — zero upfront tokens */}
+          <button onClick={handleAskOnly} disabled={working || extracting || !selDataset || !selMeta}
+            style={{ width: "100%", padding: "12px 24px", marginBottom: 8, background: "transparent", border: "1px solid rgba(155,127,227,0.35)", borderRadius: "var(--radius-md)", fontSize: 13, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: (!selDataset || !selMeta || working || extracting) ? "var(--text-tertiary)" : "#B8A0F0", cursor: (!selDataset || !selMeta || working || extracting) ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: "var(--font-display)", transition: "all var(--transition)" }}>
+            Ask Questions
+          </button>
+
 
           <button onClick={handleBuild} disabled={working || extracting}
             style={{
