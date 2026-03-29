@@ -88,7 +88,9 @@ function buildPromptBase(tbl, yf, mf, periodConds, CF, contextNote, mandatoryNot
     '    Also use chart_type "table" for ranked lists with multiple columns.',
     '19. For weekly trends, use calendar week: TO_CHAR(safe_date(col), \'YYYY-"W"WW\') NOT ISO week (IYYY/IW).',
     '20. ONLY use field names from the field catalogue. NEVER invent fields not listed there.',
-    '    If question uses vague terms like "underperformed", map to the most relevant high-priority KPI from catalogue.',
+    '21. For the Pass 1 ranking query, always use a single clean dimension column as the label — never concatenate columns. The label column must contain raw values that can be used directly in a subsequent WHERE filter.',
+    '22. For underperformance/overperformance questions, look for KPIs whose definition contains "PRIMARY PERFORMANCE INDICATOR" — use that as the ranking metric. If none found, fall back to the highest business_priority KPI with is_output=Y.',
+    '23.    If question uses vague terms like "underperformed", map to the most relevant high-priority KPI from catalogue.',
   ].join('\n')
 }
 
