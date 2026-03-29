@@ -190,6 +190,8 @@ export async function POST(request) {
   '  STEP 1: Scan field catalogue definitions for "PRIMARY PERFORMANCE INDICATOR" → use that KPI',
   '  STEP 2: If not found → use KPI with business_priority=High and is_output=Y',
   '  STEP 3: NEVER pick a KPI just because it sounds relevant — only use the rules above',
+      '  STEP 4: The "dependencies" field on a KPI lists what DRIVES that KPI — it does NOT mean those fields should be used for ranking. Always rank by the target KPI itself, never by one of its dependencies.',
+'  STEP 5: The target KPI for ranking is always the KPI whose definition says PRIMARY PERFORMANCE INDICATOR or the highest priority output KPI — not any field listed in its dependencies.',
   '',
   '## CRITICAL — LABEL COLUMN (read this first)',
   'The label column in Pass 1 must be a SINGLE raw column value (e.g. branch_name).',
