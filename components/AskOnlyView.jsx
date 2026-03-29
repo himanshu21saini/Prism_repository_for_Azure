@@ -509,6 +509,7 @@ export default function AskOnlyView({ session }) {
   var [totalTokens,      setTotalTokens]      = useState({ prompt: 0, completion: 0 })
 
   function renderChart(result, idx) {
+  
   var ct       = result.chart_type
   var labelKey = result.label_key    || 'label'
   var curKey   = result.current_key  || result.value_key || 'current_value'
@@ -517,8 +518,10 @@ export default function AskOnlyView({ session }) {
   var color    = P[idx % P.length]
   var colorA   = PA[idx % PA.length]
   var insight  = result.insight
-
-  if (ct === 'portfolio_avg') return null
+    
+if (ct === 'portfolio_avg') return null
+if (ct === 'waterfall') return <WaterfallChart key={result.id} result={result} metadata={metadata} />
+ 
   if (ct === 'bar') {
     return (
       <ChartCard key={result.id} title={result.title} insight={insight} index={idx}>
