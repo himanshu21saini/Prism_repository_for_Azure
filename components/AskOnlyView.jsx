@@ -47,117 +47,6 @@ function ChartCard({ title, insight, children, index }) {
   )
 }
 
-function renderChart(result, idx) {
-  var ct       = result.chart_type
-  var labelKey = result.label_key    || 'label'
-  var curKey   = result.current_key  || result.value_key || 'current_value'
-  var valueKey = result.value_key    || 'value'
-  var data     = result.data || []
-  var color    = P[idx % P.length]
-  var colorA   = PA[idx % PA.length]
-  var insight  = result.insight
-
-  if (ct === 'portfolio_avg') return null
-  if (ct === 'bar') {
-    return (
-      <ChartCard key={result.id} title={result.title} insight={insight} index={idx}>
-        <ResponsiveContainer width="100%" height={280}>
-          <BarChart data={data} margin={{ top: 20, right: 16, left: 0, bottom: 52 }}>
-            <CartesianGrid strokeDasharray="1 4" stroke="rgba(56,140,255,0.08)" vertical={false} />
-            <XAxis dataKey={labelKey} tick={axStyle} angle={-35} textAnchor="end" interval={0} axisLine={false} tickLine={false} />
-            <YAxis tick={axStyle} width={52} tickFormatter={fmt} axisLine={false} tickLine={false} />
-            <Tooltip contentStyle={ttStyle} formatter={function(v, n) { return [fmt(v) + (result.unit ? ' ' + result.unit : ''), n] }} />
-            <Bar dataKey={curKey} fill={colorA} stroke={color} strokeWidth={0.5} radius={[2,2,0,0]} maxBarSize={40}>
-              <LabelList dataKey={curKey} position="top" formatter={fmt} style={{ fontSize: 8, fill: 'var(--text-accent)', fontFamily: 'var(--font-mono)' }} />
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-      </ChartCard>
-    )
-  }
-
-  if (ct === 'line' || ct === 'area') {
-    var ChartComp = ct === 'area' ? AreaChart : LineChart
-    var DataComp  = ct === 'area' ? Area : Line
-    var lKey      = result.label_key || 'period'
-    var vKey      = result.value_key || 'value'
-    return (
-      <ChartCard key={result.id} title={result.title} insight={insight} index={idx}>
-        <ResponsiveContainer width="100%" height={260}>
-          <ChartComp data={data} margin={{ top: 10, right: 16, left: 0, bottom: 20 }}>
-            <CartesianGrid strokeDasharray="1 4" stroke="rgba(56,140,255,0.08)" vertical={false} />
-            <XAxis dataKey={lKey} tick={axStyle} angle={-35} textAnchor="end" interval={0} axisLine={false} tickLine={false} />
-            <YAxis tick={axStyle} width={52} tickFormatter={fmt} axisLine={false} tickLine={false} />
-            <Tooltip contentStyle={ttStyle} formatter={function(v, n) { return [fmt(v) + (result.unit ? ' ' + result.unit : ''), n] }} />
-            <DataComp type="monotone" dataKey={vKey} stroke={color} strokeWidth={1.5} fill={ct === 'area' ? colorA : undefined} dot={false} activeDot={{ r: 4, fill: color }} />
-          </ChartComp>
-        </ResponsiveContainer>
-      </ChartCard>
-    )
-  }
-
-  if (ct === 'pie' || ct === 'donut') {
-    var innerR = ct === 'donut' ? 55 : 0
-    var pieLabelKey = labelKey; var pieValueKey = valueKey
-    if (data.length > 0) {
-      var firstRow = data[0]; var keys = Object.keys(firstRow)
-      if (!firstRow[pieLabelKey]) { pieLabelKey = keys.find(function(k) { var v = firstRow[k]; return typeof v === 'string' && v.length > 0 && isNaN(parseFloat(v)) }) || keys[0] }
-      if (firstRow[pieValueKey] === undefined || firstRow[pieValueKey] === null) { pieValueKey = keys.find(function(k) { return k !== pieLabelKey && !isNaN(parseFloat(firstRow[k])) }) || keys[1] }
-    }
-    var pieData = data.map(function(r) { var row = Object.assign({}, r); row[pieValueKey] = parseFloat(row[pieValueKey]) || 0; return row }).filter(function(r) { return r[pieValueKey] > 0 && r[pieLabelKey] })
-    return (
-      <ChartCard key={result.id} title={result.title} insight={insight} index={idx}>
-        <ResponsiveContainer width="100%" height={260}>
-          <PieChart>
-            <Pie data={pieData} cx="50%" cy="45%" innerRadius={innerR} outerRadius={90} dataKey={pieValueKey} nameKey={pieLabelKey} paddingAngle={ct === 'donut' ? 2 : 1} strokeWidth={0} label={function(entry) { return (entry.percent * 100).toFixed(1) + '%' }} labelLine={{ stroke: 'var(--text-tertiary)', strokeWidth: 0.5 }}>
-              {pieData.map(function(entry, i) { return <Cell key={i} fill={PA[i % PA.length]} stroke={P[i % P.length]} strokeWidth={0.5} /> })}
-            </Pie>
-            <Tooltip contentStyle={ttStyle} formatter={function(v, n) { return [fmt(v) + (result.unit ? ' ' + result.unit : ''), n] }} />
-            <Legend wrapperStyle={{ fontSize: 10, fontFamily: "'Plus Jakarta Sans', system-ui", color: '#3D6080' }} iconSize={6} />
-          </PieChart>
-        </ResponsiveContainer>
-      </ChartCard>
-    )
-  }
-
-  if (ct === 'table' || (data.length > 15 && ct === 'bar') || ct === 'multi_line') {
-    var cols = data.length > 0 ? Object.keys(data[0]) : []
-    return (
-      <ChartCard key={result.id} title={result.title} insight={result.insight}>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, fontFamily: 'var(--font-mono)' }}>
-            <thead>
-              <tr>
-                {cols.map(function(col) {
-                  return <th key={col} style={{ padding: '6px 10px', textAlign: 'left', fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-tertiary)', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{col}</th>
-                })}
-              </tr>
-            </thead>
-            <tbody>
-              {data.map(function(row, i) {
-                return (
-                  <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                    {cols.map(function(col) {
-                      var v = row[col]
-                      var isNum = !isNaN(parseFloat(v)) && col !== labelKey
-                      return <td key={col} style={{ padding: '7px 10px', color: isNum ? 'var(--text-accent)' : 'var(--text-primary)', textAlign: isNum ? 'right' : 'left', fontFamily: isNum ? 'var(--font-mono)' : 'var(--font-body)', fontSize: 11 }}>{isNum ? fmt(v) : v}</td>
-                    })}
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      </ChartCard>
-    )
-  }
-
-  if (ct === 'waterfall') {
-  return <WaterfallChart key={result.id} result={result} metadata={metadata} />
-}
-  
-  return null
-}
 
 function QueryInspector({ queries }) {
   var [open, setOpen] = useState(false)
@@ -417,6 +306,118 @@ export default function AskOnlyView({ session }) {
   var [answers,          setAnswers]          = useState([])
   var [expandedAnswerId, setExpandedAnswerId] = useState(null)
   var [totalTokens,      setTotalTokens]      = useState({ prompt: 0, completion: 0 })
+
+  function renderChart(result, idx) {
+  var ct       = result.chart_type
+  var labelKey = result.label_key    || 'label'
+  var curKey   = result.current_key  || result.value_key || 'current_value'
+  var valueKey = result.value_key    || 'value'
+  var data     = result.data || []
+  var color    = P[idx % P.length]
+  var colorA   = PA[idx % PA.length]
+  var insight  = result.insight
+
+  if (ct === 'portfolio_avg') return null
+  if (ct === 'bar') {
+    return (
+      <ChartCard key={result.id} title={result.title} insight={insight} index={idx}>
+        <ResponsiveContainer width="100%" height={280}>
+          <BarChart data={data} margin={{ top: 20, right: 16, left: 0, bottom: 52 }}>
+            <CartesianGrid strokeDasharray="1 4" stroke="rgba(56,140,255,0.08)" vertical={false} />
+            <XAxis dataKey={labelKey} tick={axStyle} angle={-35} textAnchor="end" interval={0} axisLine={false} tickLine={false} />
+            <YAxis tick={axStyle} width={52} tickFormatter={fmt} axisLine={false} tickLine={false} />
+            <Tooltip contentStyle={ttStyle} formatter={function(v, n) { return [fmt(v) + (result.unit ? ' ' + result.unit : ''), n] }} />
+            <Bar dataKey={curKey} fill={colorA} stroke={color} strokeWidth={0.5} radius={[2,2,0,0]} maxBarSize={40}>
+              <LabelList dataKey={curKey} position="top" formatter={fmt} style={{ fontSize: 8, fill: 'var(--text-accent)', fontFamily: 'var(--font-mono)' }} />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </ChartCard>
+    )
+  }
+
+  if (ct === 'line' || ct === 'area') {
+    var ChartComp = ct === 'area' ? AreaChart : LineChart
+    var DataComp  = ct === 'area' ? Area : Line
+    var lKey      = result.label_key || 'period'
+    var vKey      = result.value_key || 'value'
+    return (
+      <ChartCard key={result.id} title={result.title} insight={insight} index={idx}>
+        <ResponsiveContainer width="100%" height={260}>
+          <ChartComp data={data} margin={{ top: 10, right: 16, left: 0, bottom: 20 }}>
+            <CartesianGrid strokeDasharray="1 4" stroke="rgba(56,140,255,0.08)" vertical={false} />
+            <XAxis dataKey={lKey} tick={axStyle} angle={-35} textAnchor="end" interval={0} axisLine={false} tickLine={false} />
+            <YAxis tick={axStyle} width={52} tickFormatter={fmt} axisLine={false} tickLine={false} />
+            <Tooltip contentStyle={ttStyle} formatter={function(v, n) { return [fmt(v) + (result.unit ? ' ' + result.unit : ''), n] }} />
+            <DataComp type="monotone" dataKey={vKey} stroke={color} strokeWidth={1.5} fill={ct === 'area' ? colorA : undefined} dot={false} activeDot={{ r: 4, fill: color }} />
+          </ChartComp>
+        </ResponsiveContainer>
+      </ChartCard>
+    )
+  }
+
+  if (ct === 'pie' || ct === 'donut') {
+    var innerR = ct === 'donut' ? 55 : 0
+    var pieLabelKey = labelKey; var pieValueKey = valueKey
+    if (data.length > 0) {
+      var firstRow = data[0]; var keys = Object.keys(firstRow)
+      if (!firstRow[pieLabelKey]) { pieLabelKey = keys.find(function(k) { var v = firstRow[k]; return typeof v === 'string' && v.length > 0 && isNaN(parseFloat(v)) }) || keys[0] }
+      if (firstRow[pieValueKey] === undefined || firstRow[pieValueKey] === null) { pieValueKey = keys.find(function(k) { return k !== pieLabelKey && !isNaN(parseFloat(firstRow[k])) }) || keys[1] }
+    }
+    var pieData = data.map(function(r) { var row = Object.assign({}, r); row[pieValueKey] = parseFloat(row[pieValueKey]) || 0; return row }).filter(function(r) { return r[pieValueKey] > 0 && r[pieLabelKey] })
+    return (
+      <ChartCard key={result.id} title={result.title} insight={insight} index={idx}>
+        <ResponsiveContainer width="100%" height={260}>
+          <PieChart>
+            <Pie data={pieData} cx="50%" cy="45%" innerRadius={innerR} outerRadius={90} dataKey={pieValueKey} nameKey={pieLabelKey} paddingAngle={ct === 'donut' ? 2 : 1} strokeWidth={0} label={function(entry) { return (entry.percent * 100).toFixed(1) + '%' }} labelLine={{ stroke: 'var(--text-tertiary)', strokeWidth: 0.5 }}>
+              {pieData.map(function(entry, i) { return <Cell key={i} fill={PA[i % PA.length]} stroke={P[i % P.length]} strokeWidth={0.5} /> })}
+            </Pie>
+            <Tooltip contentStyle={ttStyle} formatter={function(v, n) { return [fmt(v) + (result.unit ? ' ' + result.unit : ''), n] }} />
+            <Legend wrapperStyle={{ fontSize: 10, fontFamily: "'Plus Jakarta Sans', system-ui", color: '#3D6080' }} iconSize={6} />
+          </PieChart>
+        </ResponsiveContainer>
+      </ChartCard>
+    )
+  }
+
+  if (ct === 'table' || (data.length > 15 && ct === 'bar') || ct === 'multi_line') {
+    var cols = data.length > 0 ? Object.keys(data[0]) : []
+    return (
+      <ChartCard key={result.id} title={result.title} insight={result.insight}>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, fontFamily: 'var(--font-mono)' }}>
+            <thead>
+              <tr>
+                {cols.map(function(col) {
+                  return <th key={col} style={{ padding: '6px 10px', textAlign: 'left', fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-tertiary)', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{col}</th>
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {data.map(function(row, i) {
+                return (
+                  <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                    {cols.map(function(col) {
+                      var v = row[col]
+                      var isNum = !isNaN(parseFloat(v)) && col !== labelKey
+                      return <td key={col} style={{ padding: '7px 10px', color: isNum ? 'var(--text-accent)' : 'var(--text-primary)', textAlign: isNum ? 'right' : 'left', fontFamily: isNum ? 'var(--font-mono)' : 'var(--font-body)', fontSize: 11 }}>{isNum ? fmt(v) : v}</td>
+                    })}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </ChartCard>
+    )
+  }
+
+  if (ct === 'waterfall') {
+  return <WaterfallChart key={result.id} result={result} metadata={metadata} />
+}
+  
+  return null
+}
 
   async function handleAsk() {
     var q = question.trim()
