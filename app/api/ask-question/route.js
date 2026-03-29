@@ -271,6 +271,11 @@ export async function POST(request) {
     var pass1ResultsStr = JSON.stringify(pass1Results.slice(0, 10), null, 2)
 
     var pass2Prompt = [
+      '## CRITICAL — PORTFOLIO AVERAGE QUERY',
+'Query 2 must be a simple single-row SELECT with no GROUP BY and absolutely no UNION.',
+'It selects only AVG() of numeric KPI columns. No entity column. No label column.',
+'NEVER combine with Query 1 using UNION.',
+'',
       '## TASK',
       'This is Pass 2 of a two-pass analysis. Pass 1 has already identified the key entities.',
       'Now generate causal/why queries to explain WHY these entities performed the way they did.',
