@@ -386,7 +386,8 @@ export default function Dashboard({ session }) {
     var fullQuery     = allQueries.find(function(q) { return q.id === result.id }) || result
     var simulateQuery = Object.assign({}, fullQuery, { label_key: result.label_key, value_key: result.value_key, current_key: result.current_key, comparison_key: result.comparison_key, unit: result.unit, chart_type: result.chart_type })
     function onSimulate() { setWhatifQuery(simulateQuery) }
-
+    if (ct === 'portfolio_avg') return null
+    
     if (ct === 'bar') {
       return (
         <ChartCard key={result.id} title={result.title} insight={insight} index={idx} badge={badge} onSimulate={onSimulate}>
