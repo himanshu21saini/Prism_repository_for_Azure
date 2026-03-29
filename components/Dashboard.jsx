@@ -532,7 +532,9 @@ if (ct === 'table' || (ct === 'bar' && data.length > 15) || ct === 'multi_line')
         </ChartCard>
       )
     }
-
+if (ct === 'waterfall') {
+  return <WaterfallChart key={result.id} result={result} metadata={metadata} />
+}
   
     return null
   }
