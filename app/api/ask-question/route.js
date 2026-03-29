@@ -73,23 +73,25 @@ export async function POST(request) {
   var periodConds = buildQuestionPeriodConds(parsedTime, periodInfo, yf, mf)
 
   // Field catalogue — only is_output != N fields
-  var metaSummary = metadata
-    .filter(function(m) { return m.is_output !== 'N' })
-    .map(function(m) {
-      return {
-        field:               m.field_name,
-        display:             m.display_name,
-        type:                m.type,
-        unit:                m.unit || '',
-        definition:          m.definition || '',
-        aggregation:         m.aggregation || '',
-        accumulation:        m.accumulation_type || '',
-        business_priority:   m.business_priority || '',
-        favorable_direction: m.favorable_direction || '',
-        date_format:         m.date_format || '',
-        calculation_logic:   m.type === 'derived_kpi' ? (m.calculation_logic || '') : undefined,
-      }
-    })
+ var metaSummary = metadata
+  .filter(function(m) { return m.is_output !== 'N' })
+  .map(function(m) {
+    return {
+      field:               m.field_name,
+      display:             m.display_name,
+      type:                m.type,
+      data_type:           m.data_type || '',
+      unit:                m.unit || '',
+      definition:          m.definition || '',
+      aggregation:         m.aggregation || '',
+      accumulation:        m.accumulation_type || '',
+      business_priority:   m.business_priority || '',
+      favorable_direction: m.favorable_direction || '',
+      date_format:         m.date_format || '',
+      calculation_logic:   m.type === 'derived_kpi' ? (m.calculation_logic || '') : undefined,
+      dependencies:        m.dependencies ? m.dependencies : undefined,
+    }
+  })
 
   var contextNote = userContext && userContext.explanation
     ? '\nSETUP CONTEXT: ' + userContext.explanation + (CF ? '\nSQL filter: ' + CF : '')
@@ -142,7 +144,12 @@ export async function POST(request) {
 '   ALWAYS use a subquery — compute both expressions inside, then ORDER BY the alias in the outer query.',
 '   CORRECT: SELECT label, avg_val FROM (SELECT TO_CHAR(safe_date(col), \'Day\') AS label, EXTRACT(DOW FROM safe_date(col)) AS dow, AVG(metric) AS avg_val FROM tbl GROUP BY label, dow) sub ORDER BY dow ASC',
 '   WRONG: GROUP BY TO_CHAR(safe_date(col), \'Day\') ORDER BY EXTRACT(DOW FROM safe_date(col))',
-    '10. For "why"/"what caused" questions: generate 3-4 queries — primary trend, dimensional breakdown, peer comparison.',
+    '10. For "why"/"what caused"/"what drove" questions about a KPI:',
+'    Step 1 — identify upstream KPIs: check the dependencies field of the target KPI in the catalogue. These are the direct drivers.',
+'    Step 2 — generate a multi-KPI trend query showing the target KPI AND all its dependencies moving together over time in the same period. Use chart_type "line".',
+'    Step 3 — generate a dimensional breakdown of the target KPI by the highest-priority dimension. Use chart_type "bar".',
+'    Step 4 — if no dependencies listed, fall back to checking other KPIs with related definitions or similar names.',
+'    For the multi-KPI trend query, select the target KPI and each dependency as separate AVG columns aliased by their field name, grouped by period.',
     '11. Derived KPIs: if calculation_logic is provided, use that formula directly. E.g. SUM(revenue)/NULLIF(SUM(client_count),0).',
     '12. When results span multiple dimensions (region + branch), concatenate: branch_region || \' — \' || branch_name AS label.',
     '13. When outer query selects from subquery with pre-aggregated columns, do NOT apply another aggregate on them.',
@@ -207,7 +214,12 @@ export async function POST(request) {
   var narrativePrompt = [
     '## TASK',
     'Answer this BI question using only the query results provided. Be specific — use actual numbers and segment names.',
-    'For causal questions (why/what led to), frame findings as correlations: "data suggests", "a likely contributor is".',
+    'For causal questions (why/what led to):',
+'  1. State the magnitude of change in the target KPI with actual numbers.',
+'  2. For each upstream/dependency KPI that also changed, state its direction and magnitude and link it to the target — e.g. "window_count dropped from 4.1 to 3.2 in the same period, which directly reduces available teller capacity and correlates with the BFI increase".',
+'  3. For KPIs that did NOT change, explicitly rule them out — e.g. "long_txn_count remained stable, so transaction length was not a factor".',
+'  4. Conclude with the most likely primary driver based on the data.',
+'  Frame all findings as correlations not proven causes: use "correlates with", "likely contributed to", "data suggests".',
     '',
     '## QUESTION', question,
     '## PERIOD', periodUsed, contextNote, mandatoryNote,
