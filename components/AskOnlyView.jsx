@@ -57,6 +57,7 @@ function renderChart(result, idx) {
   var colorA   = PA[idx % PA.length]
   var insight  = result.insight
 
+  if (ct === 'portfolio_avg') return null
   if (ct === 'bar') {
     return (
       <ChartCard key={result.id} title={result.title} insight={insight} index={idx}>
