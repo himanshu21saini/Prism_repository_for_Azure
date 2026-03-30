@@ -12,13 +12,14 @@ import SetupScreen from '../components/SetupScreen'
 import Dashboard from '../components/Dashboard'
 import AskOnlyView from '../components/AskOnlyView'
 import { APP_NAME, APP_TAGLINE } from '../lib/app-config'
+import TaskTracker from '../components/TaskTracker'
 
 
 export default function Home() {
   var [appState, setAppState] = useState('setup')
   var [session,  setSession]  = useState(null)
 
-  function handleReady(s) { setSession(s); setAppState(s.mode === 'ask-only' ? 'ask' : 'dashboard') }
+function handleReady(s) { setSession(s); setAppState(s.mode === 'ask-only' ? 'ask' : 'dashboard') }
   function handleReset()  { setSession(null); setAppState('setup') }
 
   return (
@@ -104,7 +105,8 @@ export default function Home() {
       </header>
 
       {appState === 'setup'     && <SetupScreen onReady={handleReady} />}
-      {appState === 'dashboard' && <Dashboard session={session} onReset={handleReset} />}
+      {appState === 'dashboard' && <Dashboard session={session} onReset={handleReset} onViewTasks={function() { setAppState('tasks') }} />}
+{appState === 'tasks'     && <TaskTracker session={session} onBack={function() { setAppState('dashboard') }} />}
       {appState === 'ask'       && <AskOnlyView session={session} />}
     </main>
   )
