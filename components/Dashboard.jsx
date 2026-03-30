@@ -38,7 +38,7 @@ var ttStyle = {
 
 var axStyle = { fontSize: 10, fill: '#3D6080', fontFamily: "'JetBrains Mono', monospace" }
 
-function ChartCard({ title, insight, children, index, badge, fullWidth, onSimulate, onTrack }) {
+function ChartCard({ title, insight, children, index, badge, fullWidth, onSimulate }) {
   return (
     <div
       className={'fade-up d' + Math.min(index + 2, 6)}
@@ -67,12 +67,7 @@ function ChartCard({ title, insight, children, index, badge, fullWidth, onSimula
             onMouseLeave={function(e) { e.currentTarget.style.background = 'rgba(155,127,227,0.1)' }}
           >⟳ Simulate</button>
         )}
-        {onTrack && (
-  <button onClick={function() { onTrack() }} style={{ fontSize: 9, padding: '2px 8px', borderRadius: 3, fontWeight: 500, background: 'rgba(16,196,138,0.08)', color: '#10C48A', border: '1px solid rgba(16,196,138,0.25)', whiteSpace: 'nowrap', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)', cursor: 'pointer', transition: 'all var(--transition)', flexShrink: 0 }}
-    onMouseEnter={function(e) { e.currentTarget.style.background = 'rgba(16,196,138,0.16)' }}
-    onMouseLeave={function(e) { e.currentTarget.style.background = 'rgba(16,196,138,0.08)' }}
-  >+ Track</button>
-)}
+       
       </div>
       {children}
     </div>
@@ -403,17 +398,9 @@ var [showTrackMenu,   setShowTrackMenu]   = useState(false)
     if (ct === 'portfolio_avg') return null
     
     if (ct === 'bar') {
-      function onTrack(label, value) {
-  setTrackPrefill({
-    kpiField:   result.id,
-    kpiDisplay: result.title,
-    dimFilters: [{ field: result.label_key || 'label', value: String(label) }],
-    value:      value,
-  })
-  setTrackModalOpen(true)
-}
+     
       return (
-        <ChartCard key={result.id} title={result.title} insight={insight} index={idx} badge={badge} onSimulate={onSimulate} onTrack={onTrack}>
+        <ChartCard key={result.id} title={result.title} insight={insight} index={idx} badge={badge} onSimulate={onSimulate} >
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={data} margin={{ top: 36, right: 16, left: 0, bottom: 52 }} barGap={2}>
               <CartesianGrid strokeDasharray="1 4" stroke="rgba(56,140,255,0.08)" vertical={false} />
@@ -748,7 +735,7 @@ var favDir = meta && meta.favorable_direction ? meta.favorable_direction : 'i'
      <CreateTaskModal
   isOpen={trackModalOpen}
   onClose={function() { setTrackModalOpen(false); setTrackPrefill(null) }}
-  onCreated={function() { setTaskPanelRefresh(function(n) { return n + 1 }) }}
+  onCreated={function() {}}
   prefill={trackPrefill}
   session={session}
 /> 
