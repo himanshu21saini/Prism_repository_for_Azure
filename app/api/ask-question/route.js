@@ -106,13 +106,17 @@ function buildPromptBase(tbl, yf, mf, periodConds, CF, contextNote, mandatoryNot
     '19. For weekly trends, use calendar week: TO_CHAR(safe_date(col), \'YYYY-"W"WW\') NOT ISO week (IYYY/IW).',
     '20. ONLY use field names from the field catalogue. NEVER invent fields not listed there.',
     '    If question uses vague terms like "underperformed", map to the most relevant high-priority KPI from catalogue.',
-    '23. For "within a single day" or "per day" questions, ALWAYS use a subquery — never compute directly:',
-'    CORRECT: SELECT entity, MAX(daily_metric) FROM (SELECT entity, date_col, MAX(metric)-MIN(metric) AS daily_metric FROM tbl WHERE period GROUP BY entity, date_col) sub GROUP BY entity ORDER BY MAX(daily_metric) DESC LIMIT 1',
-'    WRONG: SELECT entity, MAX(metric)-MIN(metric) FROM tbl WHERE period GROUP BY entity',
-'24. For "which entity" singular questions (which branch, which region), always use LIMIT 1.',
-'    For range/spread questions, generate two queries:',
-'    Q1: identify the entity (LIMIT 1)',  
-'    Q2: show the detail breakdown (date, max, min, range) for that entity using a subquery to reference Q1 result',
+    '21. For improvement/decline questions across periods, always check favorable_direction before deciding comparison direction.',
+    '    favorable_direction = "i": improvement means value INCREASED → HAVING new_val > old_val',
+    '    favorable_direction = "d": improvement means value DECREASED → HAVING new_val < old_val',
+    '22. Column aliases defined in SELECT cannot be used in HAVING. Always repeat the full expression.',
+    '    WRONG: HAVING new_value < old_value',
+    '    CORRECT: HAVING AVG(CASE WHEN cond2 THEN metric END) < AVG(CASE WHEN cond1 THEN metric END)',
+    '23. For "within a single day" or "per day" range/variance questions, ALWAYS use a subquery — never compute directly.',
+    '    CORRECT: SELECT entity, MAX(daily_metric) FROM (SELECT entity, date_col, MAX(metric)-MIN(metric) AS daily_metric FROM tbl WHERE period GROUP BY entity, date_col) sub GROUP BY entity ORDER BY MAX(daily_metric) DESC LIMIT 1',
+    '    WRONG: SELECT entity, MAX(metric)-MIN(metric) FROM tbl WHERE period GROUP BY entity',
+    '24. For "which entity" singular questions (which branch, which region), always use LIMIT 1.',
+    '    For range/spread questions generate 2 queries: Q1 identifies the entity (LIMIT 1), Q2 shows date/max/min/range detail for that entity.',
   ].join('\n')
 }
 
@@ -384,13 +388,36 @@ export async function POST(request) {
     var depKpisStr      = dependencyKpis.length ? dependencyKpis.join(', ') : 'none found — use other high-priority KPIs from catalogue'
     var pass1ResultsStr = JSON.stringify(pass1Results.slice(0, 10), null, 2)
 
-    var pass2Prompt = [
+    // Pass 2 prompt differs by type
+    var pass2Prompt = twoPassType === 'analytical' ? [
       '## TASK',
-      'This is Pass 2 of a two-pass analysis. Pass 1 has already identified the key entities.',
-      'Now generate causal/why queries to explain WHY these entities performed the way they did.',
+      'Pass 2 of an analytical two-pass question. Pass 1 identified the top entity.',
+      'Now generate 1-3 queries that explain WHY that entity has this characteristic.',
+      'Focus on: date breakdown, max/min values per day, patterns over time, interval-level detail.',
+      'Do NOT generate a waterfall or dependency KPI comparison — this is a detail drill-down.',
       '',
-      '## ORIGINAL QUESTION',
-      question,
+      '## ORIGINAL QUESTION', question,
+      '',
+      '## PASS 1 RESULT', 'Identified entity: ' + entityList[0] + ' (value: ' + (pass1Results[0] && pass1Results[0].current_value || '') + ')',
+      'Entity field: ' + entityField,
+      'Target KPI: ' + targetKpi,
+      '',
+      promptBase,
+      '',
+      '## PASS 2 INSTRUCTIONS',
+      'Generate queries that show the detail behind why ' + entityList[0] + ' has this characteristic.',
+      'Example for range question: show per-day max, min, range for this entity.',
+      'Example for pattern question: show trend over time for this entity.',
+      'Filter to entity: WHERE ' + entityField + ' = '' + String(entityList[0] || '').replace(/'/g, "''") + ''',
+      '',
+      '## OUTPUT — JSON only',
+      '{"queries":[{"id":"q1","title":"...","chart_type":"bar|line|table","sql":"SELECT ...","label_key":"label","value_key":"current_value","unit":"","insight":"..."}],"period_used":"' + periodUsed + '"}',
+    ].join('\n') : [
+      '## TASK',
+      'Pass 2 of a performance two-pass question. Pass 1 identified underperforming/overperforming entities.',
+      'Now generate causal/why queries using dependency KPIs and portfolio comparison.',
+      '',
+      '## ORIGINAL QUESTION', question,
       '',
       '## PASS 1 RESULTS (already executed — do not re-run this)',
       'Target KPI: ' + targetKpi,
@@ -410,9 +437,9 @@ export async function POST(request) {
       'Fetch the target KPI AND all dependency KPIs for the identified entities only.',
       'WHERE ' + entityField + ' IN (' + entityListStr + ')',
       'GROUP BY ' + entityField,
-      'IMPORTANT: Use AVG for ALL KPI columns — this is a per-entity behavioural comparison that normalises for different numbers of intervals per entity.',
+      'IMPORTANT: Use AVG for ALL KPI columns — per-entity behavioural comparison normalising for different interval counts.',
       'Use chart_type: "waterfall"',
-      'Include these extra fields in the query response:',
+      'Include these extra fields: entity_field, entity_list, target_kpi, dependency_kpis.',
       '  entity_field: "' + entityField + '"',
       '  entity_list: ' + JSON.stringify(entityList),
       '  target_kpi: "' + targetKpi + '"',
@@ -420,9 +447,8 @@ export async function POST(request) {
       '',
       'QUERY 2 — Portfolio average query:',
       'SELECT AVG of the target KPI and all dependency KPIs across ALL entities for the same period.',
-      'This must be a completely standalone SELECT with no GROUP BY and no entity filter.',
-      'Do NOT use UNION with Query 1. Do NOT include any entity identifier column.',
-      'IMPORTANT: Use AVG for ALL KPI columns — same as Query 1.',
+      'Completely standalone SELECT — no GROUP BY, no entity filter, no UNION with Query 1.',
+      'IMPORTANT: Use AVG for ALL KPI columns.',
       'Use chart_type: "portfolio_avg" and id: "portfolio_avg".',
       'CORRECT: SELECT AVG(' + targetKpi + ') AS ' + targetKpi + ' FROM ' + tbl + ' WHERE ' + periodConds.cond + CF,
       'WRONG: UNION SELECT \'Portfolio Average\' AS ' + entityField + ' — never mix entity labels with averages',
@@ -452,34 +478,42 @@ export async function POST(request) {
     var pass2Queries = pass2Parsed.queries || []
     periodUsed       = pass2Parsed.period_used || periodUsed
 
-    // Execute Pass 2 queries
-    var waterfallQuery    = pass2Queries.find(function(q) { return q.chart_type === 'waterfall' })
-    var portfolioAvgQuery = pass2Queries.find(function(q) { return q.chart_type === 'portfolio_avg' || q.id === 'portfolio_avg' })
-
-    var waterfallData    = []
-    var portfolioAvgData = []
-    var waterfallError   = null
-
-    if (waterfallQuery) {
-      try { waterfallData = await query(waterfallQuery.sql) } catch(err) { waterfallError = err.message }
-    }
-    if (portfolioAvgQuery) {
-      try { portfolioAvgData = await query(portfolioAvgQuery.sql) } catch(err) { console.warn('Portfolio avg query failed:', err.message) }
-    }
-
-    // Combine all results
+    // Combine all results — always start with Pass 1
     var allQueryResults = []
-
-    // Pass 1 ranking query (shown as bar chart)
     allQueryResults.push(Object.assign({}, pass1Query, { data: pass1Results, error: null }))
 
-    // Waterfall query with data + portfolio avg embedded
-    if (waterfallQuery) {
-      allQueryResults.push(Object.assign({}, waterfallQuery, {
-        data:          waterfallData,
-        portfolio_avg: portfolioAvgData.length ? portfolioAvgData[0] : null,
-        error:         waterfallError,
-      }))
+    if (twoPassType === 'analytical') {
+      // ── Analytical: execute all Pass 2 queries normally ───────────────────
+      for (var ai = 0; ai < pass2Queries.length; ai++) {
+        var aq = pass2Queries[ai]
+        try {
+          var aRows = await query(aq.sql)
+          allQueryResults.push(Object.assign({}, aq, { data: aRows, error: null }))
+        } catch(err) {
+          console.error('analytical pass2 query error:', err.message)
+          allQueryResults.push(Object.assign({}, aq, { data: [], error: err.message }))
+        }
+      }
+    } else {
+      // ── Performance: waterfall + portfolio avg ────────────────────────────
+      var waterfallQuery    = pass2Queries.find(function(q) { return q.chart_type === 'waterfall' })
+      var portfolioAvgQuery = pass2Queries.find(function(q) { return q.chart_type === 'portfolio_avg' || q.id === 'portfolio_avg' })
+      var waterfallData    = []
+      var portfolioAvgData = []
+      var waterfallError   = null
+      if (waterfallQuery) {
+        try { waterfallData = await query(waterfallQuery.sql) } catch(err) { waterfallError = err.message }
+      }
+      if (portfolioAvgQuery) {
+        try { portfolioAvgData = await query(portfolioAvgQuery.sql) } catch(err) { console.warn('Portfolio avg query failed:', err.message) }
+      }
+      if (waterfallQuery) {
+        allQueryResults.push(Object.assign({}, waterfallQuery, {
+          data:          waterfallData,
+          portfolio_avg: portfolioAvgData.length ? portfolioAvgData[0] : null,
+          error:         waterfallError,
+        }))
+      }
     }
 
     // Generate narrative with full context
@@ -499,12 +533,9 @@ export async function POST(request) {
       '## DEPENDENCY KPIs', depKpisStr,
       '## QUERY RESULTS', JSON.stringify(dataSummary, null, 2),
       '',
-      '## NARRATIVE INSTRUCTIONS FOR CAUSAL QUESTIONS',
-      '1. State the magnitude of change/gap in the target KPI for each identified entity with actual numbers.',
-      '2. For each dependency KPI that shows deviation from portfolio average, state its direction and magnitude and link it to the target KPI.',
-      '3. For dependency KPIs that did NOT deviate, explicitly rule them out.',
-      '4. Conclude with the most likely primary driver based on the data.',
-      '5. Frame all findings as correlations: "correlates with", "likely contributed to", "data suggests".',
+      twoPassType === 'analytical'
+        ? '## NARRATIVE INSTRUCTIONS\n1. State which entity was identified and its specific value.\n2. Explain the pattern — which day had the peak, what the max/min were, what the spread looks like.\n3. Suggest what might cause this pattern based on the data.'
+        : '## NARRATIVE INSTRUCTIONS FOR PERFORMANCE QUESTIONS\n1. State the gap in the target KPI for each identified entity with actual numbers.\n2. For each dependency KPI that deviates from portfolio average, state direction and magnitude.\n3. Rule out dependency KPIs that did NOT deviate.\n4. Conclude with the most likely primary driver.\n5. Frame as correlations: "correlates with", "likely contributed to", "data suggests".',
       '',
       '## OUTPUT — JSON only',
       '{"answer":"2-4 sentence answer with specific numbers","key_findings":["finding 1","finding 2"],"drivers":"1-2 sentences on primary drivers","investigate":["thing to check 1"],"data_limitation":"note if insufficient data, else empty string"}',
