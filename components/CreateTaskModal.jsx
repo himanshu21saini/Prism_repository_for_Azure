@@ -83,6 +83,7 @@ export default function CreateTaskModal({ isOpen, onClose, onCreated, prefill, s
   var dimensions = metadata.filter(function(m) {
     return m.type === 'dimension' && m.is_output !== 'N'
   })
+  console.log('dimensions:', dimensions, 'metadata length:', metadata.length)
 
   // Map kpi field_name → current dashboard value
   var kpiValueMap = useMemo(function() {
