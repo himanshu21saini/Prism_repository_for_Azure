@@ -294,9 +294,6 @@ export default function Dashboard({ session }) {
   var [trendSQLCache,    setTrendSQLCache]    = useState({})
   var [questionSQLCache, setQuestionSQLCache] = useState([])
 
-  if (ct === 'portfolio_avg') return null
-if (ct === 'waterfall') return <WaterfallChart key={result.id} result={result} metadata={session.metadata || []} />
-  
   function handleTrendData(fieldName, data, meta, sql) {
     setTrendDataCache(function(prev) { var next = Object.assign({}, prev); next[fieldName] = { data: data, meta: meta }; return next })
     if (sql) {
