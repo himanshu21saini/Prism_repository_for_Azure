@@ -54,7 +54,10 @@ export async function GET(request, { params }) {
     }
     var meta       = metaRows[0]
     var accumType  = meta ? (meta.accumulation_type || 'cumulative') : 'cumulative'
-    var aggFn      = accumType === 'point_in_time' ? 'AVG' : 'SUM'
+    var aggOverride = meta ? (meta.aggregation || '').toUpperCase() : ''
+    var aggFn      = aggOverride === 'AVG' ? 'AVG'
+                   : aggOverride === 'SUM' ? 'SUM'
+                   : accumType === 'point_in_time' ? 'AVG' : 'SUM'
     var calcLogic  = meta && meta.calculation_logic ? meta.calculation_logic : null
     var selectExpr = calcLogic ? calcLogic : aggFn + '(COALESCE(' + kpi + ', 0))'
 
