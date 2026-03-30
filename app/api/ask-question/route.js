@@ -91,6 +91,9 @@ function buildPromptBase(tbl, yf, mf, periodConds, CF, contextNote, mandatoryNot
      '21. For improvement/decline questions across periods, always check favorable_direction from the catalogue before deciding the comparison direction.',
     '    favorable_direction = "i": improvement means the value INCREASED from old to new period → HAVING new_val > old_val',
     '    favorable_direction = "d": improvement means the value DECREASED from old to new period → HAVING new_val < old_val',
+    '22. Column aliases defined in SELECT cannot be used in HAVING. Always repeat the full expression in HAVING.',
+'    WRONG: HAVING new_value < old_value',
+'    CORRECT: HAVING AVG(CASE WHEN condition2 THEN metric END) < AVG(CASE WHEN condition1 THEN metric END)',
    
     '    If question uses vague terms like "underperformed", map to the most relevant high-priority KPI from catalogue.',
   ].join('\n')
