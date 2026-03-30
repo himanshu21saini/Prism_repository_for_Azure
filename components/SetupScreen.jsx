@@ -68,13 +68,14 @@ function ProdChip({ active, onClick, children, amber }) {
   )
 }
 
-function SectionCard({ n, title, children }) {
+function SectionCard({ n, title, children,style }) {
   return (
-    <div style={{
-      background: 'linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%)',
-      border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)',
-      padding: '20px 22px', position: 'relative', overflow: 'hidden', marginBottom: 12,
-    }}>
+<div style={{
+  background: 'linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%)',
+  border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)',
+  padding: '20px 22px', position: 'relative', overflow: 'hidden', marginBottom: 12,
+  ...style,
+}}>
       <div style={{ position: 'absolute', top: 8, left: 8, width: 12, height: 12, borderTop: '1px solid var(--accent-border)', borderLeft: '1px solid var(--accent-border)', borderRadius: '2px 0 0 0', opacity: 0.6 }} />
       <div style={{ position: 'absolute', top: 8, right: 8, width: 12, height: 12, borderTop: '1px solid var(--accent-border)', borderRight: '1px solid var(--accent-border)', borderRadius: '0 2px 0 0', opacity: 0.6 }} />
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg, transparent, var(--accent), transparent)', opacity: 0.2 }} />
@@ -688,11 +689,14 @@ export default function SetupScreen({ onReady }) {
 
         <StepBar current={1} />
 
-        <div style={{ width: '100%', maxWidth: 640 }}>
+        <div style={{ width: '100%', maxWidth: 960 }}>
 
-          {/* ── Section 1: Data ── */}
-          <SectionCard n="1" title="Data">
-            <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginBottom: 12 }}>Main data file — .xlsx, .xls or .csv</p>
+<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'stretch', marginBottom: 12 }}>
+
+  {/* ── Left column: Section 1 ── */}
+  <div style={{ display: 'flex', flexDirection: 'column' }}>
+    <SectionCard n="1" title="Data" style={{ flex: 1, marginBottom: 0 }}>
+                  <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginBottom: 12 }}>Main data file — .xlsx, .xls or .csv</p>
             <p style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.09em', marginBottom: 6, fontFamily: 'var(--font-body)' }}>Dataset</p>
             {!loadingLists && datasets.length > 0 && (
               <div style={{ display: 'flex', gap: 5, marginBottom: 8 }}>
@@ -742,11 +746,13 @@ export default function SetupScreen({ onReady }) {
                 </div>
             }
             {autoGenState === 'done' && autoGenResult && <AutoGenResult result={autoGenResult} />}
-          </SectionCard>
+    </SectionCard>
+  </div>
 
-          {/* ── Section 2: Time Period ── */}
-          <SectionCard n="2" title="Time period">
-            <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginBottom: 12 }}>Set the as-of date and comparison type for all queries</p>
+  {/* ── Right column: Sections 2 & 3 ── */}
+  <div style={{ display: 'flex', flexDirection: 'column' }}>
+    <SectionCard n="2" title="Time period">
+           <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginBottom: 12 }}>Set the as-of date and comparison type for all queries</p>
             <div style={{ display: 'flex', gap: 16, marginBottom: 14 }}>
               <div>
                 <p style={{ fontSize: 9, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6, fontFamily: 'var(--font-body)' }}>View</p>
@@ -786,12 +792,11 @@ export default function SetupScreen({ onReady }) {
                 {viewType} · {MONTH_NAMES[selMonth-1]} {selYear} · vs {compType}{activePair ? ' · ' + activePair.yearField : ''}
               </p>
             </div>
-          </SectionCard>
 
-          {/* ── Section 3: Data Filters (conditional) ── */}
-          {mandatoryFilterFields.length > 0 && (
-            <SectionCard n="3" title="Data Filters">
-              <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginBottom: 14, lineHeight: 1.5 }}>
+    </SectionCard>
+    {mandatoryFilterFields.length > 0 && (
+      <SectionCard n="3" title="Data Filters">
+           <p style={{ fontSize: 12, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)', marginBottom: 14, lineHeight: 1.5 }}>
                 Required filters to prevent double-counting. Defaults are from your metadata — adjust if needed.
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -825,9 +830,11 @@ export default function SetupScreen({ onReady }) {
                   )
                 })}
               </div>
-            </SectionCard>
-          )}
+      </SectionCard>
+    )}
+  </div>
 
+</div>
           {error && (
             <p style={{ fontSize: 11, color: 'var(--red-text)', background: 'var(--red-light)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', marginBottom: 12, border: '1px solid rgba(224,85,85,0.2)' }}>
               {error}
