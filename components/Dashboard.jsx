@@ -665,12 +665,10 @@ if (ct === 'waterfall') {
       <path d="M3 9H1.5A.5.5 0 0 1 1 8.5v-3A.5.5 0 0 1 1.5 5h11a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-.5.5H11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
       <rect x="3" y="8" width="8" height="5" rx="0.5" stroke="currentColor" strokeWidth="1.3"/>
       <circle cx="11" cy="7" r="0.6" fill="currentColor"/>
-    </svg>
-  </button>
-
-</div>
-         
-               </div>
+     </svg>
+          </button>
+        </div>
+      </div>
       </div>
 
       {tokenCalls.length > 0 && (
@@ -680,8 +678,6 @@ if (ct === 'waterfall') {
       )}
     </div>
   )}
-
-      
 
       {prefs.decisions !== false && decisionState !== 'idle' && <DecisionPanel result={decisionResult} state={decisionState} error={decisionError} />}
       {prefs.summary !== false && summaryState !== 'idle' && <SummaryPanel narrative={narrative} state={summaryState} error={summaryError} />}
