@@ -675,7 +675,7 @@ if (ct === 'waterfall') {
             </div>
           )}
         </div>
-      )}
+      
 
       {prefs.decisions !== false && decisionState !== 'idle' && <DecisionPanel result={decisionResult} state={decisionState} error={decisionError} />}
       {prefs.summary !== false && summaryState !== 'idle' && <SummaryPanel narrative={narrative} state={summaryState} error={summaryError} />}
