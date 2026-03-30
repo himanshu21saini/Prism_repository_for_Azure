@@ -13,6 +13,8 @@ import WhatIfDrawer from './WhatIfDrawer'
 import TrendExplorer from './TrendExplorer'
 import TokenMeter from './TokenMeter'
 import CoveragePanel from './CoveragePanel'
+import TaskPanel from './TaskPanel'
+import CreateTaskModal from './CreateTaskModal'
 
 var P  = ['#00C8F0','#2B7FE3','#00B4A0','#7B8FF0','#F0A030','#9B7FE3','#10C48A','#E05555']
 var PA = ['rgba(0,200,240,0.5)','rgba(43,127,227,0.5)','rgba(0,180,160,0.5)','rgba(123,143,240,0.5)','rgba(240,160,48,0.5)','rgba(155,127,227,0.5)','rgba(16,196,138,0.5)','rgba(224,85,85,0.5)']
@@ -35,7 +37,7 @@ var ttStyle = {
 
 var axStyle = { fontSize: 10, fill: '#3D6080', fontFamily: "'JetBrains Mono', monospace" }
 
-function ChartCard({ title, insight, children, index, badge, fullWidth, onSimulate }) {
+function ChartCard({ title, insight, children, index, badge, fullWidth, onSimulate, onTrack }) {
   return (
     <div
       className={'fade-up d' + Math.min(index + 2, 6)}
@@ -64,6 +66,12 @@ function ChartCard({ title, insight, children, index, badge, fullWidth, onSimula
             onMouseLeave={function(e) { e.currentTarget.style.background = 'rgba(155,127,227,0.1)' }}
           >⟳ Simulate</button>
         )}
+        {onTrack && (
+  <button onClick={function() { onTrack() }} style={{ fontSize: 9, padding: '2px 8px', borderRadius: 3, fontWeight: 500, background: 'rgba(16,196,138,0.08)', color: '#10C48A', border: '1px solid rgba(16,196,138,0.25)', whiteSpace: 'nowrap', letterSpacing: '0.06em', fontFamily: 'var(--font-mono)', cursor: 'pointer', transition: 'all var(--transition)', flexShrink: 0 }}
+    onMouseEnter={function(e) { e.currentTarget.style.background = 'rgba(16,196,138,0.16)' }}
+    onMouseLeave={function(e) { e.currentTarget.style.background = 'rgba(16,196,138,0.08)' }}
+  >+ Track</button>
+)}
       </div>
       {children}
     </div>
@@ -283,6 +291,10 @@ export default function Dashboard({ session }) {
   var [decisionError,  setDecisionError]  = useState('')
   var [whatifQuery,    setWhatifQuery]    = useState(null)
 
+  var [trackModalOpen,   setTrackModalOpen]   = useState(false)
+var [trackPrefill,     setTrackPrefill]     = useState(null)
+var [taskPanelRefresh, setTaskPanelRefresh] = useState(0)
+  
   var [tokenCalls, setTokenCalls] = useState(function() {
     if (session.initialUsage) {
       return [{ label: 'queries', promptTokens: session.initialUsage.prompt_tokens, completionTokens: session.initialUsage.completion_tokens, model: session.initialUsage.model || 'gpt-4o' }]
@@ -390,8 +402,17 @@ export default function Dashboard({ session }) {
     if (ct === 'portfolio_avg') return null
     
     if (ct === 'bar') {
+      function onTrack(label, value) {
+  setTrackPrefill({
+    kpiField:   result.id,
+    kpiDisplay: result.title,
+    dimFilters: [{ field: result.label_key || 'label', value: String(label) }],
+    value:      value,
+  })
+  setTrackModalOpen(true)
+}
       return (
-        <ChartCard key={result.id} title={result.title} insight={insight} index={idx} badge={badge} onSimulate={onSimulate}>
+        <ChartCard key={result.id} title={result.title} insight={insight} index={idx} badge={badge} onSimulate={onSimulate} onTrack={onTrack}>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={data} margin={{ top: 36, right: 16, left: 0, bottom: 52 }} barGap={2}>
               <CartesianGrid strokeDasharray="1 4" stroke="rgba(56,140,255,0.08)" vertical={false} />
@@ -686,9 +707,20 @@ var favDir = meta && meta.favorable_direction ? meta.favorable_direction : 'i'
         onQuestionQueries={function(qs) { setQuestionSQLCache(function(prev) { return prev.concat(qs) }) }}
       />
 
+      <TaskPanel
+  key={taskPanelRefresh}
+  session={session}
+/>
       {prefs.coveragePanel !== false && <CoveragePanel coverageData={session.coverageData} />}
 
       <WhatIfDrawer query={whatifQuery || {}} metadata={metadata} isOpen={!!whatifQuery} onClose={function() { setWhatifQuery(null) }} />
+     <CreateTaskModal
+  isOpen={trackModalOpen}
+  onClose={function() { setTrackModalOpen(false); setTrackPrefill(null) }}
+  onCreated={function() { setTaskPanelRefresh(function(n) { return n + 1 }) }}
+  prefill={trackPrefill}
+  session={session}
+/> 
     </div>
   )
 }
