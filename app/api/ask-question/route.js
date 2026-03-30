@@ -408,7 +408,7 @@ export async function POST(request) {
       'Generate queries that show the detail behind why ' + entityList[0] + ' has this characteristic.',
       'Example for range question: show per-day max, min, range for this entity.',
       'Example for pattern question: show trend over time for this entity.',
-      'Filter to entity: WHERE ' + entityField + ' = '' + String(entityList[0] || '').replace(/'/g, "''") + ''',
+      'Filter to entity: WHERE ' + entityField + " = '" + String(entityList[0] || '').replace(/'/g, "''") + "'",
       '',
       '## OUTPUT — JSON only',
       '{"queries":[{"id":"q1","title":"...","chart_type":"bar|line|table","sql":"SELECT ...","label_key":"label","value_key":"current_value","unit":"","insight":"..."}],"period_used":"' + periodUsed + '"}',
