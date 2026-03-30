@@ -182,14 +182,10 @@ export default function CreateTaskModal({ isOpen, onClose, onCreated, prefill, s
                 <span style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>from chart</span>
               </div>
             ) : dashboardEntry ? (
-              <div>
-                <div style={{ padding: '8px 12px', background: 'var(--accent-dim)', border: '1px solid var(--accent-border)', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-accent)', fontFamily: 'var(--font-mono)' }}>{fmt(dashboardEntry.value)}</span>
-                  <span style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>from dashboard · override below if needed</span>
-                </div>
-                <input type="number" placeholder="Override value (optional)" value={manualValue}
-                  onChange={function(e) { setManualValue(e.target.value) }} style={{ ...inputStyle, marginBottom: 0 }} />
-              </div>
+  <div style={{ padding: '8px 12px', background: 'var(--accent-dim)', border: '1px solid var(--accent-border)', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', gap: 8 }}>
+    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-accent)', fontFamily: 'var(--font-mono)' }}>{fmt(dashboardEntry.value)}</span>
+    <span style={{ fontSize: 10, color: 'var(--text-tertiary)', fontFamily: 'var(--font-body)' }}>auto-filled from dashboard</span>
+  </div>
             ) : (
               <div>
                 <input type="number" placeholder="Enter current value (optional)" value={manualValue}
