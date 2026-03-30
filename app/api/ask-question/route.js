@@ -408,6 +408,8 @@ export async function POST(request) {
       'Generate queries that show the detail behind why ' + entityList[0] + ' has this characteristic.',
       'Example for range question: show per-day max, min, range for this entity.',
       'Example for pattern question: show trend over time for this entity.',
+      'For causal/what-led-to questions about a specific entity, generate a multi-column trend query showing the target KPI and all dependency KPIs as separate columns grouped by period — NOT as separate rows using UNION ALL.',
+'Use chart_type "table" for multi-column results. This allows visual correlation between KPIs across time.',
       'Filter to entity: WHERE ' + entityField + " = '" + String(entityList[0] || '').replace(/'/g, "''") + "'",
       '',
       '## OUTPUT — JSON only',
