@@ -274,15 +274,15 @@ function WaterfallChart({ result, metadata }) {
 // Add this function BEFORE the main component (AskOnlyView or Dashboard)
 // It needs access to the metadata prop to look up favorable_direction
 
-function WaterfallChart({ result, metadata }) {
+function WaterfallChart({ result: wfResult, metadata }) {
   var [selectedEntity, setSelectedEntity] = useState(null)
 
-  var entityField   = result.entity_field   || 'label'
-  var entityList    = result.entity_list    || []
-  var targetKpi     = result.target_kpi     || ''
-  var depKpis       = result.dependency_kpis || []
-  var data          = result.data           || []
-  var portfolioAvg  = result.portfolio_avg  || null
+  var entityField   = result.wfResult.entity_field   || 'label'
+  var entityList    = result.wfResult.entity_list    || []
+  var targetKpi     = result.wfResult.target_kpi     || ''
+  var depKpis       = result.wfResult.dependency_kpis || []
+  var data          = result.wfResult.data           || []
+  var portfolioAvg  = result.wfResult.portfolio_avg  || null
 
   // Default to first entity
   var activeEntity = selectedEntity || entityList[0]
