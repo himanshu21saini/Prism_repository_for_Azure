@@ -234,6 +234,7 @@ export default function CreateTaskModal({ isOpen, onClose, onCreated, prefill, s
 
           {/* Dimension filters */}
           <FieldRow label="Segment filters">
+             {console.log('dimFilters:', dimFilters)}
             {dimFilters.map(function(f, i) {
       <DimFilterRow key={i} index={i} filter={f} dimensions={dimensions} datasetId={session.datasetId} onUpdate={handleDimUpdate} onRemove={handleDimRemove} />      
       })}
