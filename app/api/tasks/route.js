@@ -21,11 +21,11 @@ export async function POST(request) {
   try { body = await request.json() } catch (e) { return Response.json({ error: 'Invalid body.' }, { status: 400 }) }
 
   var {
-    datasetId, metadataSetId, kpiField, kpiDisplay,
-    dimensionFilters, yearField, monthField,
-    createdYear, createdMonth, createdValue,
-    direction, note,
-  } = body
+      datasetId, metadataSetId, kpiField, kpiDisplay,
+      dimensionFilters, yearField, monthField,
+      createdYear, createdMonth, createdValue,
+      direction, note, mandatoryFilters,
+    } = body
 
   if (!datasetId || !kpiField || !createdYear || !createdMonth) {
     return Response.json({ error: 'datasetId, kpiField, createdYear, createdMonth are required.' }, { status: 400 })
