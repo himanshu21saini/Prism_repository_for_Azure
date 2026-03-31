@@ -234,7 +234,7 @@ function TaskRow({ task, onStatusChange, onDelete }) {
                   <XAxis dataKey="period" tick={axStyle} angle={-35} textAnchor="end" interval={0} axisLine={false} tickLine={false} />
                   <YAxis tick={axStyle} width={48} tickFormatter={fmt} axisLine={false} tickLine={false} />
                   <Tooltip contentStyle={ttStyle} formatter={function(v) { return [fmt(v), task.kpi_display] }} labelFormatter={function(l) { return 'Period: ' + l }} />
-                  <ReferenceLine x={creationPeriod} stroke="#F0A030" strokeDasharray="3 3" strokeWidth={1.5} label={{ value: 'Flagged', position: 'top', fontSize: 9, fill: '#F0A030', fontFamily: 'var(--font-mono)' }} />
+                  <ReferenceLine x={creationPeriod} stroke="#F0A030" strokeDasharray="3 3" strokeWidth={1.5} label={{ value: 'Flagged', position: 'insideTopRight', offset: 5, fontSize: 9, fill: '#F0A030', fontFamily: 'var(--font-mono)' }} />
                   <Line type="monotone" dataKey="value" stroke="var(--accent)" strokeWidth={1.5} dot={<CustomDot />} activeDot={{ r: 4, fill: 'var(--accent)' }} />
                 </LineChart>
               </ResponsiveContainer>
