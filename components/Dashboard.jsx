@@ -14,6 +14,9 @@ import TrendExplorer from './TrendExplorer'
 import TokenMeter from './TokenMeter'
 import CoveragePanel from './CoveragePanel'
 
+import CreateTaskModal from './CreateTaskModal'
+import TaskTracker from './TaskTracker'
+
 var P  = ['#00C8F0','#2B7FE3','#00B4A0','#7B8FF0','#F0A030','#9B7FE3','#10C48A','#E05555']
 var PA = ['rgba(0,200,240,0.5)','rgba(43,127,227,0.5)','rgba(0,180,160,0.5)','rgba(123,143,240,0.5)','rgba(240,160,48,0.5)','rgba(155,127,227,0.5)','rgba(16,196,138,0.5)','rgba(224,85,85,0.5)']
 var PC = ['rgba(0,200,240,0.12)','rgba(43,127,227,0.12)','rgba(0,180,160,0.12)','rgba(123,143,240,0.12)']
@@ -64,6 +67,7 @@ function ChartCard({ title, insight, children, index, badge, fullWidth, onSimula
             onMouseLeave={function(e) { e.currentTarget.style.background = 'rgba(155,127,227,0.1)' }}
           >⟳ Simulate</button>
         )}
+       
       </div>
       {children}
     </div>
@@ -272,7 +276,7 @@ function WaterfallChart({ result, metadata }) {
 }
 
 
-export default function Dashboard({ session }) {
+export default function Dashboard({ session, onReset, onViewTasks }) {
   var questionPanelRef = useRef(null)
 
   var [summaryState,   setSummaryState]   = useState('idle')
@@ -283,6 +287,10 @@ export default function Dashboard({ session }) {
   var [decisionError,  setDecisionError]  = useState('')
   var [whatifQuery,    setWhatifQuery]    = useState(null)
 
+var [trackModalOpen,  setTrackModalOpen]  = useState(false)
+var [trackPrefill,    setTrackPrefill]    = useState(null)
+var [showTrackMenu,   setShowTrackMenu]   = useState(false)
+  
   var [tokenCalls, setTokenCalls] = useState(function() {
     if (session.initialUsage) {
       return [{ label: 'queries', promptTokens: session.initialUsage.prompt_tokens, completionTokens: session.initialUsage.completion_tokens, model: session.initialUsage.model || 'gpt-4o' }]
@@ -390,8 +398,9 @@ export default function Dashboard({ session }) {
     if (ct === 'portfolio_avg') return null
     
     if (ct === 'bar') {
+     
       return (
-        <ChartCard key={result.id} title={result.title} insight={insight} index={idx} badge={badge} onSimulate={onSimulate}>
+        <ChartCard key={result.id} title={result.title} insight={insight} index={idx} badge={badge} onSimulate={onSimulate} >
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={data} margin={{ top: 36, right: 16, left: 0, bottom: 52 }} barGap={2}>
               <CartesianGrid strokeDasharray="1 4" stroke="rgba(56,140,255,0.08)" vertical={false} />
@@ -575,52 +584,104 @@ if (ct === 'waterfall') {
                 })}
               </p>
             </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-              {prefs.summary !== false && (
-                <button onClick={handleGenerateSummary} disabled={summaryState === 'loading'} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', background: summaryState === 'loading' ? 'transparent' : 'linear-gradient(135deg, rgba(0,200,240,0.15) 0%, rgba(43,127,227,0.1) 100%)', border: '1px solid ' + (summaryState === 'loading' ? 'var(--border)' : 'var(--accent-border)'), borderRadius: 'var(--radius-md)', fontSize: 11, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: summaryState === 'loading' ? 'var(--text-tertiary)' : 'var(--text-accent)', cursor: summaryState === 'loading' ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', transition: 'all var(--transition)', boxShadow: summaryState === 'loading' ? 'none' : '0 0 16px rgba(0,200,240,0.08)' }}>
-                  {summaryState === 'loading' ? <><span className="spinner" /> Composing...</> : <>{summaryState === 'done' ? 'Regenerate Summary' : 'Generate Summary'}</>}
-                </button>
-              )}
-              {prefs.decisions !== false && (
-                <button onClick={handleGenerateDecisions} disabled={decisionState === 'loading'} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', background: decisionState === 'loading' ? 'transparent' : 'linear-gradient(135deg, rgba(123,143,240,0.18) 0%, rgba(83,74,183,0.12) 100%)', border: '1px solid ' + (decisionState === 'loading' ? 'var(--border)' : 'rgba(123,143,240,0.4)'), borderRadius: 'var(--radius-md)', fontSize: 11, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: decisionState === 'loading' ? 'var(--text-tertiary)' : '#7B8FF0', cursor: decisionState === 'loading' ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', transition: 'all var(--transition)', boxShadow: decisionState === 'loading' ? 'none' : '0 0 16px rgba(123,143,240,0.1)' }}>
-                  {decisionState === 'loading' ? <><span className="spinner" /> Analysing...</> : <>{decisionState === 'done' ? 'Refresh Decisions' : 'Generate Decisions'}</>}
-                </button>
-              )}
-              <div style={{ width: 1, height: 20, background: 'var(--border)', flexShrink: 0 }} />
-              <button onClick={handlePrint} title="Print / Save as PDF" className="prism-print-hide" style={{ width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-2)', border: '1px solid rgba(0,180,160,0.25)', borderRadius: 'var(--radius-md)', color: '#00B4A0', cursor: 'pointer', transition: 'all var(--transition)', flexShrink: 0, padding: 0 }}
-                onMouseEnter={function(e) { e.currentTarget.style.background = 'rgba(0,180,160,0.1)'; e.currentTarget.style.borderColor = 'rgba(0,180,160,0.5)'; e.currentTarget.style.boxShadow = '0 0 10px rgba(0,180,160,0.15)' }}
-                onMouseLeave={function(e) { e.currentTarget.style.background = 'var(--surface-2)'; e.currentTarget.style.borderColor = 'rgba(0,180,160,0.25)'; e.currentTarget.style.boxShadow = 'none' }}
-              >
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                  <path d="M3 5V2h8v3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-                  <path d="M3 9H1.5A.5.5 0 0 1 1 8.5v-3A.5.5 0 0 1 1.5 5h11a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-.5.5H11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-                  <rect x="3" y="8" width="8" height="5" rx="0.5" stroke="currentColor" strokeWidth="1.3"/>
-                  <circle cx="11" cy="7" r="0.6" fill="currentColor"/>
-                </svg>
-              </button>
-              <div style={{ width: 1, height: 20, background: 'var(--border)', flexShrink: 0 }} />
-              <button onClick={handleScrollToQuestion} title="Ask a question about your data" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'linear-gradient(135deg, rgba(155,127,227,0.14) 0%, rgba(103,74,183,0.1) 100%)', border: '1px solid rgba(155,127,227,0.35)', borderRadius: 'var(--radius-md)', color: '#B8A0F0', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'var(--font-display)', letterSpacing: '0.08em', textTransform: 'uppercase', transition: 'all var(--transition)', flexShrink: 0 }}
-                onMouseEnter={function(e) { e.currentTarget.style.background = 'rgba(155,127,227,0.22)'; e.currentTarget.style.boxShadow = '0 0 12px rgba(155,127,227,0.15)' }}
-                onMouseLeave={function(e) { e.currentTarget.style.background = 'linear-gradient(135deg, rgba(155,127,227,0.14) 0%, rgba(103,74,183,0.1) 100%)'; e.currentTarget.style.boxShadow = 'none' }}
-              >
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                  <circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1.3"/>
-                  <path d="M4.5 4.5a1.5 1.5 0 0 1 3 0c0 1-1.5 1.5-1.5 2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-                  <circle cx="6" cy="9" r="0.6" fill="currentColor"/>
-                </svg>
-                Ask
-              </button>
-            </div>
-          </div>
+  {/* Summary */}
+  {prefs.summary !== false && (
+    <button onClick={handleGenerateSummary} disabled={summaryState === 'loading'} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', background: summaryState === 'loading' ? 'transparent' : 'linear-gradient(135deg, rgba(0,200,240,0.15) 0%, rgba(43,127,227,0.1) 100%)', border: '1px solid ' + (summaryState === 'loading' ? 'var(--border)' : 'var(--accent-border)'), borderRadius: 'var(--radius-md)', fontSize: 11, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: summaryState === 'loading' ? 'var(--text-tertiary)' : 'var(--text-accent)', cursor: summaryState === 'loading' ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', transition: 'all var(--transition)', boxShadow: summaryState === 'loading' ? 'none' : '0 0 16px rgba(0,200,240,0.08)' }}>
+      {summaryState === 'loading' ? <><span className="spinner" /> Composing...</> : <>{summaryState === 'done' ? 'Regenerate Summary' : 'Generate Summary'}</>}
+    </button>
+  )}
 
-          {tokenCalls.length > 0 && (
-            <div className="prism-print-hide" style={{ marginTop: 10 }}>
-              <TokenMeter calls={tokenCalls} />
-            </div>
-          )}
+  {/* Decisions */}
+  {prefs.decisions !== false && (
+    <button onClick={handleGenerateDecisions} disabled={decisionState === 'loading'} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', background: decisionState === 'loading' ? 'transparent' : 'linear-gradient(135deg, rgba(123,143,240,0.18) 0%, rgba(83,74,183,0.12) 100%)', border: '1px solid ' + (decisionState === 'loading' ? 'var(--border)' : 'rgba(123,143,240,0.4)'), borderRadius: 'var(--radius-md)', fontSize: 11, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: decisionState === 'loading' ? 'var(--text-tertiary)' : '#7B8FF0', cursor: decisionState === 'loading' ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-display)', transition: 'all var(--transition)', boxShadow: decisionState === 'loading' ? 'none' : '0 0 16px rgba(123,143,240,0.1)' }}>
+      {decisionState === 'loading' ? <><span className="spinner" /> Analysing...</> : <>{decisionState === 'done' ? 'Refresh Decisions' : 'Generate Decisions'}</>}
+    </button>
+  )}
+
+  {/* Separator */}
+  {prefs.askPanel !== false && <div style={{ width: 1, height: 20, background: 'var(--border)', flexShrink: 0 }} />}
+
+
+  {/* Ask */}
+  {prefs.askPanel !== false && (
+  <button onClick={handleScrollToQuestion} title="Ask a question about your data" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'linear-gradient(135deg, rgba(155,127,227,0.14) 0%, rgba(103,74,183,0.1) 100%)', border: '1px solid rgba(155,127,227,0.35)', borderRadius: 'var(--radius-md)', color: '#B8A0F0', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'var(--font-display)', letterSpacing: '0.08em', textTransform: 'uppercase', transition: 'all var(--transition)', flexShrink: 0 }}
+    onMouseEnter={function(e) { e.currentTarget.style.background = 'rgba(155,127,227,0.22)'; e.currentTarget.style.boxShadow = '0 0 12px rgba(155,127,227,0.15)' }}
+    onMouseLeave={function(e) { e.currentTarget.style.background = 'linear-gradient(135deg, rgba(155,127,227,0.14) 0%, rgba(103,74,183,0.1) 100%)'; e.currentTarget.style.boxShadow = 'none' }}
+  >
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+      <circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1.3"/>
+      <path d="M4.5 4.5a1.5 1.5 0 0 1 3 0c0 1-1.5 1.5-1.5 2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+      <circle cx="6" cy="9" r="0.6" fill="currentColor"/>
+    </svg>
+    Ask
+  </button> )}
+
+  {/* Separator */}
+  {prefs.trackPanel !== false && <div style={{ width: 1, height: 20, background: 'var(--border)', flexShrink: 0 }} />}
+
+
+  {/* Track KPI */}
+  {prefs.trackPanel !== false && (
+  <div style={{ position: 'relative' }}>
+    <button onClick={function() { setShowTrackMenu(function(v) { return !v }) }}
+      style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', background: 'linear-gradient(135deg, rgba(16,196,138,0.12) 0%, rgba(0,180,160,0.08) 100%)', border: '1px solid rgba(16,196,138,0.3)', borderRadius: 'var(--radius-md)', color: '#10C48A', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'var(--font-display)', letterSpacing: '0.08em', textTransform: 'uppercase', transition: 'all var(--transition)', flexShrink: 0 }}
+      onMouseEnter={function(e) { e.currentTarget.style.background = 'rgba(16,196,138,0.2)' }}
+      onMouseLeave={function(e) { e.currentTarget.style.background = 'linear-gradient(135deg, rgba(16,196,138,0.12) 0%, rgba(0,180,160,0.08) 100%)' }}
+    >
+      <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+        <circle cx="5.5" cy="5.5" r="4.5" stroke="currentColor" strokeWidth="1.3"/>
+        <path d="M5.5 3v2.5l1.5 1.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+      </svg>
+      Track KPI
+    </button>
+    {showTrackMenu && (
+      <div style={{ position: 'absolute', top: '110%', right: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', overflow: 'hidden', zIndex: 200, minWidth: 180, boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}>
+        <button onClick={function() { setShowTrackMenu(false); setTrackPrefill(null); setTrackModalOpen(true) }}
+          style={{ width: '100%', padding: '10px 16px', background: 'none', border: 'none', borderBottom: '1px solid var(--border)', cursor: 'pointer', textAlign: 'left', fontSize: 12, color: 'var(--text-primary)', fontFamily: 'var(--font-body)', display: 'flex', alignItems: 'center', gap: 8 }}
+          onMouseEnter={function(e) { e.currentTarget.style.background = 'var(--surface-2)' }}
+          onMouseLeave={function(e) { e.currentTarget.style.background = 'none' }}
+        >
+          <span style={{ color: 'var(--text-accent)' }}>+</span> Track New KPI
+        </button>
+        <button onClick={function() { setShowTrackMenu(false); onViewTasks() }}
+          style={{ width: '100%', padding: '10px 16px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', fontSize: 12, color: 'var(--text-primary)', fontFamily: 'var(--font-body)', display: 'flex', alignItems: 'center', gap: 8 }}
+          onMouseEnter={function(e) { e.currentTarget.style.background = 'var(--surface-2)' }}
+          onMouseLeave={function(e) { e.currentTarget.style.background = 'none' }}
+        >
+          <span style={{ color: '#10C48A' }}>↗</span> View All Tasks
+        </button>
+      </div>
+    )}
+  </div>
+  )}
+  {/* Separator */}
+  <div style={{ width: 1, height: 20, background: 'var(--border)', flexShrink: 0 }} />
+
+  {/* Print */}
+  <button onClick={handlePrint} title="Print / Save as PDF" className="prism-print-hide" style={{ width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-2)', border: '1px solid rgba(0,180,160,0.25)', borderRadius: 'var(--radius-md)', color: '#00B4A0', cursor: 'pointer', transition: 'all var(--transition)', flexShrink: 0, padding: 0 }}
+    onMouseEnter={function(e) { e.currentTarget.style.background = 'rgba(0,180,160,0.1)'; e.currentTarget.style.borderColor = 'rgba(0,180,160,0.5)'; e.currentTarget.style.boxShadow = '0 0 10px rgba(0,180,160,0.15)' }}
+    onMouseLeave={function(e) { e.currentTarget.style.background = 'var(--surface-2)'; e.currentTarget.style.borderColor = 'rgba(0,180,160,0.25)'; e.currentTarget.style.boxShadow = 'none' }}
+  >
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <path d="M3 5V2h8v3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M3 9H1.5A.5.5 0 0 1 1 8.5v-3A.5.5 0 0 1 1.5 5h11a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-.5.5H11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+      <rect x="3" y="8" width="8" height="5" rx="0.5" stroke="currentColor" strokeWidth="1.3"/>
+      <circle cx="11" cy="7" r="0.6" fill="currentColor"/>
+     </svg>
+          </button>
+     
+      </div>
+      </div>
+
+      {tokenCalls.length > 0 && (
+        <div className="prism-print-hide" style={{ marginTop: 10 }}>
+          <TokenMeter calls={tokenCalls} />
         </div>
       )}
+    </div>
+  )}
 
       {prefs.decisions !== false && decisionState !== 'idle' && <DecisionPanel result={decisionResult} state={decisionState} error={decisionError} />}
       {prefs.summary !== false && summaryState !== 'idle' && <SummaryPanel narrative={narrative} state={summaryState} error={summaryError} />}
@@ -686,9 +747,17 @@ var favDir = meta && meta.favorable_direction ? meta.favorable_direction : 'i'
         onQuestionQueries={function(qs) { setQuestionSQLCache(function(prev) { return prev.concat(qs) }) }}
       />
 
+     
       {prefs.coveragePanel !== false && <CoveragePanel coverageData={session.coverageData} />}
 
       <WhatIfDrawer query={whatifQuery || {}} metadata={metadata} isOpen={!!whatifQuery} onClose={function() { setWhatifQuery(null) }} />
+     <CreateTaskModal
+  isOpen={trackModalOpen}
+  onClose={function() { setTrackModalOpen(false); setTrackPrefill(null) }}
+  onCreated={function() {}}
+  prefill={trackPrefill}
+  session={session}
+/> 
     </div>
   )
 }

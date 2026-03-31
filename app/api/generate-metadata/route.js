@@ -41,8 +41,8 @@ export async function POST(request) {
     '## DATASET FIELDS WITH SAMPLE VALUES',
     JSON.stringify(colSummary, null, 2),
     '',
-    '## OUTPUT FORMAT — JSON array only',
-    'Return a JSON array where each element has exactly these keys:',
+    '## OUTPUT FORMAT — JSON object only',
+'Return a JSON object with a single key "fields" containing an array. Each element has exactly these keys:',
     '{',
     '  "field_name": "exact field name from input",',
     '  "display_name": "human-friendly name e.g. Branch Name",',
@@ -73,7 +73,7 @@ export async function POST(request) {
     'For year_month fields: aggregation and accumulation_type should be empty, is_output = Y',
     '',
     '## IMPORTANT',
-    'Return ONLY the JSON array. No markdown. No explanation. No preamble.',
+    'Return ONLY {"fields": [...]}. No markdown. No explanation. No preamble.',
     'Every field from the input must appear in the output exactly once.',
     'field_name must exactly match the input field name.',
   ].join('\n')
@@ -108,7 +108,7 @@ export async function POST(request) {
   }
 
   // Handle both array and { fields: [...] } response shapes
-  var fields = Array.isArray(parsed) ? parsed : (parsed.fields || parsed.metadata || Object.values(parsed)[0])
+var fields = parsed.fields || parsed.metadata || (Array.isArray(parsed) ? parsed : Object.values(parsed)[0])
   if (!Array.isArray(fields)) return Response.json({ error: 'Expected array of fields from LLM.' }, { status: 500 })
 
   // ── Build Excel workbook ──────────────────────────────────────────────────
