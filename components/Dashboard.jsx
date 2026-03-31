@@ -619,7 +619,8 @@ if (ct === 'waterfall') {
   </button> )}
 
   {/* Separator */}
-  <div style={{ width: 1, height: 20, background: 'var(--border)', flexShrink: 0 }} />
+  {prefs.trackPanel !== false && <div style={{ width: 1, height: 20, background: 'var(--border)', flexShrink: 0 }} />}
+
 
   {/* Track KPI */}
   {prefs.trackPanel !== false && (
