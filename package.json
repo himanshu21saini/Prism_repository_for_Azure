@@ -1,3 +1,4 @@
+"start": "next start -p $PORT"
 {
   "name": "auto-narrative-agent",
   "version": "0.1.0",
