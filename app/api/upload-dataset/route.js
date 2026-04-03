@@ -136,7 +136,7 @@ var SUB = Math.max(1, Math.floor(maxParams / rawCols.length))
           })
           placeholders.push('(' + rowPH.join(', ') + ')')
         })
-
+      console.log('=== chunk insert: batch size', batch.length, 'cols', rawCols.length, 'params', values.length, 'first value:', values[0])
         await execute(
           'INSERT INTO ds_' + datasetId + ' (' + colList + ') VALUES ' + placeholders.join(', '),
           values
