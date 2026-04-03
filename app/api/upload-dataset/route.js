@@ -52,9 +52,9 @@ export async function POST(request) {
       if (existing.length > 0) {
         datasetId = existing[0].id
         await execute(
-          'UPDATE datasets SET row_count = $1, uploaded_at = NOW() WHERE id = $2',
-          [rowCount, datasetId]
-        )
+  'UPDATE datasets SET column_map = $1::jsonb WHERE id = $2',
+  [JSON.stringify(colMap), datasetId]
+)
       } else {
         var result = await query(
           'INSERT INTO datasets (name, row_count) VALUES ($1, $2) RETURNING id',
