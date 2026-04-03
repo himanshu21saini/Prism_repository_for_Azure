@@ -29,7 +29,8 @@ jobs:
 
       - name: Prepare standalone package
         run: |
-          cp -r public .next/standalone/ 2>/dev/null || true
+          mkdir -p .next/standalone/public
+          cp -r public/* .next/standalone/public/ 2>/dev/null || true
           cp -r .next/static .next/standalone/.next/static
 
       - name: Upload artifact for deployment
