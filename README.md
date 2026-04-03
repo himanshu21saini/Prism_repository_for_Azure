@@ -1,5 +1,5 @@
 # Auto Narrative Agent v4
-
+ 
 AI-powered BI dashboard. Upload data once to Neon Postgres, describe it with metadata, and get LLM-generated SQL queries, live charts, and narrative summaries.
   
 ---
