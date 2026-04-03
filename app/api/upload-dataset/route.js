@@ -114,6 +114,9 @@ export async function POST(request) {
       var dsRow = await query('SELECT column_map FROM datasets WHERE id = $1', [datasetId])
       if (!dsRow.length) return Response.json({ error: 'Dataset not found.' }, { status: 404 })
       var colMap = dsRow[0].column_map || {}
+if (typeof colMap === 'string') {
+  try { colMap = JSON.parse(colMap) } catch(e) { colMap = {} }
+}
       var rawCols       = Object.keys(colMap)
       var sanitizedCols = rawCols.map(function(r) { return colMap[r] })
       var colList       = sanitizedCols.join(', ')
