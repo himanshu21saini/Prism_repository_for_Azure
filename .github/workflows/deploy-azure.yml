@@ -48,6 +48,13 @@ jobs:
         with:
           name: node-app
 
+      - name: List files before deploy
+        run: |
+          echo "=== Root ==="
+          ls -la
+          echo "=== .next exists? ==="
+          ls -la .next/ | head -20
+
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
