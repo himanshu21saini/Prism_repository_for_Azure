@@ -119,7 +119,8 @@ export async function POST(request) {
       var colList       = sanitizedCols.join(', ')
 
       // Insert in sub-batches of 100 rows to keep payload size manageable
-      var SUB = 100
+var maxParams = 60000
+var SUB = Math.max(1, Math.floor(maxParams / rawCols.length))
       var totalInserted = 0
       for (var b = 0; b < rows.length; b += SUB) {
         var batch       = rows.slice(b, b + SUB)
