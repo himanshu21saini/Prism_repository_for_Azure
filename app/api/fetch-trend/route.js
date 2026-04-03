@@ -16,32 +16,19 @@ export async function POST(request) {
   var yf               = body.yearField  || 'year'
   var mf               = body.monthField || 'month'
   var fiscal           = /fiscal/i.test(yf)
-  // QTD/MTD period filter — passed from TrendExplorer when a period is active
-  // For point_in_time KPIs in QTD/MTD, each monthly point is already a snapshot
-  // so we don't restrict the trend to the quarter — we show the full historical
-  // trend but use AVG (not SUM) so each monthly data point is the correct snapshot.
-  // The period label in TrendExplorer communicates the QTD context to the user.
   var viewType         = body.viewType || 'YTD'
-  var periodMonthMin   = body.periodMonthMin   || null  // for QTD/MTD filtering if needed
-  var periodMonthMax   = body.periodMonthMax   || null
 
   if (!datasetId || !fieldName) {
     return Response.json({ error: 'datasetId and fieldName are required.' }, { status: 400 })
   }
 
-  // Detect count distinct — from calculation_logic or accumulation_type hint
+  var tbl = 'ds_' + datasetId
+
   var isCountDistinct = /distinct/i.test(calculationLogic) || /count_distinct/i.test(accumulationType)
   var distField       = isCountDistinct ? (dependencies || fieldName) : null
   var agg             = accumulationType === 'point_in_time' ? 'AVG' : 'SUM'
 
-  var yearRangeSQL = [
-    'SELECT',
-    "  MIN((data->>'" + yf + "')::integer) AS min_year,",
-    "  MAX((data->>'" + yf + "')::integer) AS max_year",
-    'FROM dataset_rows',
-    'WHERE dataset_id = ' + datasetId,
-    "  AND (data->>'" + yf + "') IS NOT NULL",
-  ].join('\n')
+  var yearRangeSQL = 'SELECT MIN(' + yf + '::integer) AS min_year, MAX(' + yf + '::integer) AS max_year FROM ' + tbl + ' WHERE ' + yf + ' IS NOT NULL'
 
   var yearRange
   try {
@@ -58,22 +45,17 @@ export async function POST(request) {
   )
 
   var valueExpr = isCountDistinct
-    ? "COUNT(DISTINCT data->>'" + distField + "')"
-    : agg + "(COALESCE((data->>'" + fieldName + "')::numeric, 0))"
+    ? 'COUNT(DISTINCT ' + distField + ')'
+    : agg + '(COALESCE(' + fieldName + '::numeric, 0))'
 
-  var trendSQL = [
-    'SELECT',
-    "  CONCAT(data->>'" + yf + "', '-', LPAD(CAST((data->>'" + mf + "')::integer AS TEXT), 2, '0')) AS period,",
-    '  ' + valueExpr + ' AS value',
-    'FROM dataset_rows',
-    'WHERE dataset_id = ' + datasetId,
-    "  AND (data->>'" + yf + "')::integer >= " + minYear,
-    "  AND (data->>'" + yf + "')::integer <= " + maxYear,
-    "  AND (data->>'" + mf + "') IS NOT NULL",
-    "  AND (data->>'" + yf + "') IS NOT NULL",
-    "GROUP BY data->>'" + yf + "', data->>'" + mf + "'",
-    'ORDER BY period ASC',
-  ].join('\n')
+  var trendSQL = 'SELECT CONCAT(' + yf + ", '-', LPAD(CAST(" + mf + '::integer AS TEXT), 2, \'0\')) AS period, ' +
+    valueExpr + ' AS value FROM ' + tbl +
+    ' WHERE ' + yf + '::integer >= ' + minYear +
+    ' AND ' + yf + '::integer <= ' + maxYear +
+    ' AND ' + mf + ' IS NOT NULL' +
+    ' AND ' + yf + ' IS NOT NULL' +
+    ' GROUP BY ' + yf + ', ' + mf +
+    ' ORDER BY period ASC'
 
   try {
     var rows = await query(trendSQL)
@@ -82,7 +64,7 @@ export async function POST(request) {
     })
     return Response.json({
       data: filtered, fieldName, agg, minYear, maxYear,
-      fiscal:           fiscal,
+      fiscal: fiscal,
       fiscalStartMonth: FISCAL_START_MONTH,
     })
   } catch (err) {
