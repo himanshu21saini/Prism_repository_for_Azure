@@ -43,7 +43,7 @@ export async function POST(request) {
     yearRange.min_year ? parseInt(yearRange.min_year) : maxYear - yearsBack,
     maxYear - yearsBack
   )
-
+console.log('=== fetch-trend: fieldName=', fieldName, 'distField=', distField, 'isCountDistinct=', isCountDistinct, 'agg=', agg)
   var valueExpr = isCountDistinct
     ? 'COUNT(DISTINCT ' + distField + ')'
     : agg + '(COALESCE(' + fieldName + '::numeric, 0))'
