@@ -1,5 +1,5 @@
 name: Build and deploy PRISM to Azure
-
+ 
 on:
   push:
     branches:
