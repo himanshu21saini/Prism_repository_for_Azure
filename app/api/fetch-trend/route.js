@@ -25,7 +25,7 @@ export async function POST(request) {
   var tbl = 'ds_' + datasetId
 
   var isCountDistinct = /distinct/i.test(calculationLogic) || /count_distinct/i.test(accumulationType)
-  var distField       = isCountDistinct ? (dependencies || fieldName) : null
+  var distField       = isCountDistinct ? (dependencies || fieldName).split(',')[0].trim() : null
   var agg             = accumulationType === 'point_in_time' ? 'AVG' : 'SUM'
 
   var yearRangeSQL = 'SELECT MIN(' + yf + '::integer) AS min_year, MAX(' + yf + '::integer) AS max_year FROM ' + tbl + ' WHERE ' + yf + ' IS NOT NULL'
