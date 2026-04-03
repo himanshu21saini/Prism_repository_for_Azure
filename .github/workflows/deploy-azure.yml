@@ -27,25 +27,17 @@ jobs:
           NEXT_PUBLIC_VAPI_KEY: ${{ secrets.NEXT_PUBLIC_VAPI_KEY }}
           NEXT_PUBLIC_VAPI_ASSISTANT_ID: ${{ secrets.NEXT_PUBLIC_VAPI_ASSISTANT_ID }}
 
-      - name: Prepare deployment package
+      - name: Prepare standalone package
         run: |
-          echo '[config]' > .deployment
-          echo 'SCM_DO_BUILD_DURING_DEPLOYMENT = false' >> .deployment
-          echo 'ENABLE_ORYX_BUILD = false' >> .deployment
+          cp -r public .next/standalone/ 2>/dev/null || true
+          cp -r .next/static .next/standalone/.next/static
 
       - name: Upload artifact for deployment
         uses: actions/upload-artifact@v4
         with:
           name: node-app
           include-hidden-files: true
-          path: |
-            .next/
-            public/
-            package.json
-            package-lock.json
-            next.config.js
-            node_modules/
-            .deployment
+          path: .next/standalone/
 
   deploy:
     runs-on: ubuntu-latest
@@ -60,10 +52,8 @@ jobs:
         run: |
           echo "=== Root ==="
           ls -la
-          echo "=== .next exists? ==="
-          ls .next/ | head -5
-          echo "=== .deployment ==="
-          cat .deployment
+          echo "=== server.js exists? ==="
+          ls -la server.js
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
@@ -71,3 +61,10 @@ jobs:
           app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
           package: .
+```
+
+**Step 3 — Update startup command in Azure:**
+
+Configuration → General settings → Startup Command:
+```
+node /home/site/wwwroot/server.js
